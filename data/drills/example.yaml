@@ -1,0 +1,16 @@
+id: "sts_hip_depth_wall"
+title: "Maintain hip depth with wall feel"
+faults: ["early_extension", "loss_spine_angle"]
+tags: ["pivot", "hip_depth", "at_home"]
+steps:
+  - "Trail hip 2 inches from wall at address."
+  - "Backswing: maintain contact lightly."
+  - "Downswing: lead hip replaces trail hip."
+cues: ["hip back to wall", "lead hip replaces trail hip"]
+reps: "3 x 8 slow swings"
+pitfalls: ["pelvis toward ball", "standing up at impact"]
+source:
+  book: "Stock Tour Swing"
+  author: "Tyler Ferrell"
+  pages: "112-114"
+
