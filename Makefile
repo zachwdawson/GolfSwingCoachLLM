@@ -16,7 +16,7 @@ dev:
 
 test:
 	@echo "Running backend tests..."
-	cd backend && python -m pytest
+	cd backend && if [ -d venv ]; then source venv/bin/activate && pytest; else python3 -m pytest; fi
 	@echo "Running frontend type check..."
 	cd frontend && npm run type-check
 
