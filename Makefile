@@ -33,11 +33,11 @@ lint:
 	cd frontend && npm run lint
 
 compose-up:
-	docker-compose up -d
+	docker compose up -d
 	@echo "Services started. Backend: http://localhost:8000, Frontend: http://localhost:3000"
 
 compose-down:
-	docker-compose down
+	docker compose down
 	@echo "Services stopped"
 
 seed:

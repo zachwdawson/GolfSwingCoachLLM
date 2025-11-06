@@ -21,7 +21,9 @@ See [FILE_TREE.md](FILE_TREE.md) for a detailed file tree.
 
 ### Prerequisites
 
-- Docker and Docker Compose
+- **Docker Desktop** - Install from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
+  - On macOS: Download Docker Desktop for Mac
+  - Make sure Docker Desktop is running before using `make compose-up`
 - Python 3.11+ (for local backend development)
 - Node.js 20+ (for local frontend development)
 
