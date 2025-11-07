@@ -6,8 +6,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from app.core.config import settings
 from app.models.video import Video, Base
+from app.models.frame import Frame  # Import to ensure table is created
 from app.schemas.video import VideoCreate, VideoResponse
+from app.schemas.frame import FrameResponse, FramesListResponse
 from app.services.aws import s3_client
+from app.processing.queue import enqueue_frame_extraction
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -105,6 +108,10 @@ async def upload_video(file: UploadFile = File(...), db: Session = Depends(get_d
             detail="Failed to save video record",
         )
 
+    # Enqueue frame extraction
+    enqueue_frame_extraction(video_id)
+    logger.info(f"Enqueued video for frame extraction: {video_id}")
+
     return VideoCreate(video_id=video_id, s3_key=s3_key)
 
 
@@ -118,8 +125,13 @@ async def get_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
             detail=f"Video {video_id} not found",
         )
 
-    # For now, return empty frame_urls
+    # Get frame URLs if available
+    frames = db.query(Frame).filter(Frame.video_id == video_id).order_by(Frame.index).all()
     frame_urls = []
+    for frame in frames:
+        url = s3_client.generate_presigned_url(frame.s3_key)
+        if url:
+            frame_urls.append(url)
 
     return VideoResponse(
         video_id=video.id,
@@ -127,4 +139,55 @@ async def get_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
         s3_key=video.s3_key,
         frame_urls=frame_urls,
     )
+
+
+@router.get("/videos/{video_id}/frames", response_model=FramesListResponse)
+async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Get all frames for a video with presigned URLs."""
+    # Verify video exists
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video {video_id} not found",
+        )
+
+    # Get frames
+    frames = db.query(Frame).filter(Frame.video_id == video_id).order_by(Frame.index).all()
+    
+    frame_responses = []
+    for frame in frames:
+        url = s3_client.generate_presigned_url(frame.s3_key)
+        if url:
+            frame_responses.append(
+                FrameResponse(
+                    frame_id=frame.id,
+                    video_id=frame.video_id,
+                    index=frame.index,
+                    url=url,
+                    width=frame.width,
+                    height=frame.height,
+                    created_at=frame.created_at.isoformat(),
+                )
+            )
+
+    return FramesListResponse(video_id=video_id, frames=frame_responses)
+
+
+@router.post("/videos/{video_id}/process")
+async def process_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Manually trigger frame extraction for a video."""
+    # Verify video exists
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video {video_id} not found",
+        )
+
+    # Enqueue for processing
+    enqueue_frame_extraction(video_id)
+    logger.info(f"Manually enqueued video for processing: {video_id}")
+
+    return {"message": f"Video {video_id} queued for processing", "video_id": str(video_id)}
 
