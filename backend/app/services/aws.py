@@ -27,6 +27,16 @@ class S3Client:
             logger.error(f"Error uploading to S3: {e}")
             return False
 
+    def download_file(self, s3_key: str, local_path: str) -> bool:
+        """Download file from S3 to local path."""
+        try:
+            self.s3_client.download_file(self.bucket, s3_key, local_path)
+            logger.info(f"Downloaded file from s3://{self.bucket}/{s3_key}")
+            return True
+        except ClientError as e:
+            logger.error(f"Error downloading from S3: {e}")
+            return False
+
     def generate_presigned_url(
         self, s3_key: str, expiration: Optional[int] = None
     ) -> Optional[str]:

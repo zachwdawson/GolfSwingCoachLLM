@@ -1,8 +1,10 @@
 import logging
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.upload import router as upload_router
 from app.core.config import settings
+from app.processing.queue import start_worker
 
 # Configure logging
 logging.basicConfig(
@@ -21,6 +23,10 @@ app.add_middleware(
 )
 
 app.include_router(upload_router)
+
+# Start background worker for frame processing (skip during tests)
+if not os.environ.get("TESTING"):
+    start_worker()
 
 
 @app.get("/health")
