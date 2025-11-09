@@ -24,12 +24,24 @@ See [FILE_TREE.md](FILE_TREE.md) for a detailed file tree.
 - **Docker Desktop** - Install from [docker.com/products/docker-desktop](https://www.docker.com/products/docker-desktop/)
   - On macOS: Download Docker Desktop for Mac
   - Make sure Docker Desktop is running before using `make compose-up`
-- Python 3.11+ (for local backend development)
+- Python 3.11 or 3.12 (for local backend development - PyTorch doesn't support 3.14 yet)
 - Node.js 20+ (for local frontend development)
+- **ffmpeg** - Required for video processing (used for extracting frames)
+  - **macOS:** `brew install ffmpeg`
+  - **Ubuntu/Debian:** `sudo apt-get install ffmpeg`
 
 ### Quick Start
 
-1. **Start all services with Docker Compose:**
+1. **Set up development environments:**
+   ```bash
+   make setup
+   ```
+   This automatically:
+   - Creates Python virtual environment with correct Python version
+   - Installs all backend dependencies
+   - Installs all frontend dependencies
+
+2. **Start all services with Docker Compose:**
    ```bash
    make compose-up
    ```
@@ -38,18 +50,21 @@ See [FILE_TREE.md](FILE_TREE.md) for a detailed file tree.
    - Backend API on http://localhost:8000
    - Frontend app on http://localhost:3000
 
-2. **Access the application:**
+3. **Access the application:**
    - Frontend: http://localhost:3000
    - Backend API: http://localhost:8000
    - API Health: http://localhost:8000/health
 
-3. **Stop services:**
+4. **Stop services:**
    ```bash
    make compose-down
    ```
 
 ### Development Commands
 
+- `make setup` - Set up all environments (backend + frontend)
+- `make setup-backend` - Set up backend Python environment only
+- `make setup-frontend` - Set up frontend Node.js environment only
 - `make dev` - Start development environment (same as compose-up)
 - `make test` - Run all tests (backend pytest, frontend type-check)
 - `make fmt` - Format code (ruff for backend, prettier for frontend)
@@ -57,43 +72,34 @@ See [FILE_TREE.md](FILE_TREE.md) for a detailed file tree.
 - `make compose-up` - Start Docker Compose services
 - `make compose-down` - Stop Docker Compose services
 
+### Detailed Setup Instructions
+
+For detailed setup instructions, troubleshooting, and manual setup steps, see [SETUP.md](SETUP.md).
+
 ### Backend Development
 
-1. **Set up environment:**
-   ```bash
-   cd backend
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+The backend setup is automated. For manual setup, see [SETUP.md](SETUP.md).
 
-2. **Install dependencies:**
-   ```bash
-   pip install -e ".[dev]"
-   ```
-
-3. **Run locally:**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+**Quick manual setup:**
+```bash
+cd backend
+cp .env.example .env
+# Edit .env with your configuration
+make setup-backend
+source venv/bin/activate
+uvicorn app.main:app --reload
+```
 
 ### Frontend Development
 
-1. **Set up environment:**
-   ```bash
-   cd frontend
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+The frontend setup is automated. For manual setup, see [SETUP.md](SETUP.md).
 
-2. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-3. **Run locally:**
-   ```bash
-   npm run dev
-   ```
+**Quick manual setup:**
+```bash
+cd frontend
+make setup-frontend
+npm run dev
+```
 
 ## Environment Variables
 
@@ -106,6 +112,9 @@ See [FILE_TREE.md](FILE_TREE.md) for a detailed file tree.
 - `EMBEDDINGS_API_KEY` - API key for embeddings service
 - `LLM_API_KEY` - API key for LLM service
 - `LOG_LEVEL` - Logging level (INFO, DEBUG, etc.)
+- `MODEL_CHECKPOINT_PATH` - Path to trained model checkpoint (.pth file)
+- `MODEL_DEVICE` - Device for model inference (cuda/cpu, empty for auto-detect)
+- `MODEL_SEQ_LEN` - Sequence length for model (default: 64)
 
 ### Frontend (.env)
 

@@ -1,7 +1,7 @@
 """Model service for lazy loading and caching the frame classifier model."""
 import logging
 import threading
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 try:
     import torch
@@ -10,12 +10,15 @@ except ImportError:
     TORCH_AVAILABLE = False
     torch = None  # type: ignore
 
+if TYPE_CHECKING:
+    from app.ml.model import GolfDBFrameClassifier
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 # Global model instance and lock for thread-safe access
-_model: Optional[GolfDBFrameClassifier] = None
+_model: Optional["GolfDBFrameClassifier"] = None
 _model_lock = threading.Lock()
 
 
