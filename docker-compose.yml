@@ -21,12 +21,12 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - ./backend/.env
     environment:
       DB_URL: postgresql://postgres:postgres@postgres:5432/golfcoach
-      AWS_REGION: us-east-1
-      S3_BUCKET: golf-coach-videos
-      USE_SSM: "false"
-      LOG_LEVEL: INFO
+      # AWS credentials loaded from ./backend/.env
+      # AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET, LOG_LEVEL
     depends_on:
       postgres:
         condition: service_healthy
