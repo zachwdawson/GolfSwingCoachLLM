@@ -1,7 +1,10 @@
-.PHONY: help dev test fmt lint compose-up compose-down seed
+.PHONY: help dev test fmt lint compose-up compose-down seed setup setup-backend setup-frontend
 
 help:
 	@echo "Available commands:"
+	@echo "  make setup        - Set up all environments (backend + frontend)"
+	@echo "  make setup-backend - Set up backend Python environment"
+	@echo "  make setup-frontend - Set up frontend Node.js environment"
 	@echo "  make dev          - Start development environment"
 	@echo "  make test         - Run all tests"
 	@echo "  make fmt          - Format code"
@@ -9,6 +12,18 @@ help:
 	@echo "  make compose-up   - Start Docker Compose services"
 	@echo "  make compose-down - Stop Docker Compose services"
 	@echo "  make seed         - Seed database with sample data"
+
+setup: setup-backend setup-frontend
+	@echo "✓ All environments set up!"
+
+setup-backend:
+	@echo "Setting up backend Python environment..."
+	@cd backend && bash setup_env.sh
+
+setup-frontend:
+	@echo "Setting up frontend Node.js environment..."
+	@cd frontend && if [ ! -d "node_modules" ]; then npm install; else echo "node_modules already exists, skipping..."; fi
+	@echo "✓ Frontend environment set up!"
 
 dev:
 	@echo "Starting development environment..."

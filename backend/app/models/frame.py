@@ -14,5 +14,7 @@ class Frame(Base):
     s3_key = Column(String, nullable=False)
     width = Column(Integer, nullable=False)
     height = Column(Integer, nullable=False)
+    event_label = Column(String, nullable=True)  # Event type (e.g., "Address", "Toe-up", etc.)
+    event_class = Column(Integer, nullable=True)  # Event class index (0-7)
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
