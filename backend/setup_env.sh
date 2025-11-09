@@ -12,6 +12,15 @@ PYTHON_MAX_VERSION="3.13"  # PyTorch doesn't support 3.14 yet
 
 echo "Setting up backend Python environment..."
 
+# Check for ffmpeg/ffprobe (required for video processing)
+if ! command -v ffprobe &> /dev/null && ! command -v ffmpeg &> /dev/null; then
+    echo "WARNING: ffmpeg/ffprobe not found. Video processing will not work."
+    echo "Install with:"
+    echo "  macOS: brew install ffmpeg"
+    echo "  Ubuntu/Debian: sudo apt-get install ffmpeg"
+    echo ""
+fi
+
 # Function to check Python version
 check_python_version() {
     local python_cmd=$1
@@ -88,9 +97,9 @@ source "$VENV_DIR/bin/activate"
 echo "Upgrading pip..."
 pip install --upgrade pip setuptools wheel > /dev/null 2>&1
 
-# Install dependencies
+# Install dependencies (including dev dependencies for testing)
 echo "Installing dependencies..."
-pip install -e . > /dev/null 2>&1
+pip install -e ".[dev]" > /dev/null 2>&1
 
 echo ""
 echo "✓ Backend environment setup complete!"
