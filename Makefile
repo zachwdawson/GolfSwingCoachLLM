@@ -31,9 +31,14 @@ dev:
 
 test:
 	@echo "Running backend tests..."
-	cd backend && if [ -d venv ]; then source venv/bin/activate && TESTING=1 pytest; else TESTING=1 python3 -m pytest; fi
+	@cd backend && if [ -d venv ]; then \
+		source venv/bin/activate && TESTING=1 python -m pytest; \
+	else \
+		echo "Warning: venv not found. Run 'make setup-backend' first."; \
+		TESTING=1 python3 -m pytest; \
+	fi
 	@echo "Running frontend type check..."
-	cd frontend && npm run type-check
+	@cd frontend && npm run type-check
 
 fmt:
 	@echo "Formatting backend code..."

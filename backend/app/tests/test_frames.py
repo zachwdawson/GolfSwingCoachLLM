@@ -155,60 +155,85 @@ def test_frame_extraction_mocked(client, mock_ffmpeg, mock_pil, test_db):
         temp_video.write(b"fake video content")
     
     try:
-        # Mock S3 client in frames module
-        with patch("app.processing.frames.s3_client") as mock_s3:
-            mock_s3.download_file.return_value = True
-            mock_s3.upload_file.return_value = True
+        # Mock model service to return a mock model
+        with patch("app.processing.frames.get_model") as mock_get_model:
+            mock_model = MagicMock()
+            mock_model.device.type = "cpu"
+            mock_get_model.return_value = mock_model
             
-            # Mock tempfile to use our actual temp file
-            with patch("app.processing.frames.tempfile") as mock_tempfile:
-                # Mock NamedTemporaryFile to return our temp file
-                def mock_named_tempfile(*args, **kwargs):
-                    mock_temp = MagicMock()
-                    mock_temp.name = temp_video_path
-                    mock_temp.__enter__ = lambda self: self
-                    mock_temp.__exit__ = lambda *args: None
-                    return mock_temp
+            # Mock video preprocessing and inference
+            with patch("app.processing.frames.preprocess_video") as mock_preprocess:
+                # Create a mock preprocessed video tensor
+                import torch
+                mock_video_tensor = torch.zeros(100, 112, 112, 3, dtype=torch.uint8)
+                mock_preprocess.return_value = mock_video_tensor
                 
-                mock_tempfile.NamedTemporaryFile.side_effect = mock_named_tempfile
-                
-                # Mock TemporaryDirectory
-                mock_temp_dir = MagicMock()
-                mock_temp_dir.__enter__.return_value = "/tmp/frames"
-                mock_temp_dir.__exit__.return_value = None
-                mock_tempfile.TemporaryDirectory.return_value = mock_temp_dir
-                
-                # Mock os.path.exists for frame files
-                with patch("app.processing.frames.os.path.exists") as mock_exists:
-                    def exists_side_effect(path):
-                        if path == temp_video_path:
-                            return True
-                        return path.endswith(".jpg")
-                    mock_exists.side_effect = exists_side_effect
+                with patch("app.processing.frames.prepare_video_for_inference") as mock_prepare:
+                    mock_video_tensor_prepared = torch.zeros(1, 3, 64, 112, 112, dtype=torch.float32)
+                    mock_prepare.return_value = (mock_video_tensor_prepared, 1)
                     
-                    # Mock open for reading frame files
-                    with patch("builtins.open", create=True) as mock_open:
-                        def open_side_effect(path, mode="r"):
-                            if "frame" in path and mode == "rb":
-                                return io.BytesIO(b"fake image data")
-                            return open(path, mode) if os.path.exists(path) else MagicMock()
-                        mock_open.side_effect = open_side_effect
+                    with patch("app.processing.frames.process_video_for_events") as mock_process:
+                        # Return mock event frames
+                        mock_process.return_value = {i: i * 10 for i in range(8)}
                         
-                        # Mock os.unlink to prevent errors
-                        with patch("app.processing.frames.os.unlink"):
-                            # Run extraction
-                            result = extract_frames(video_id, db)
+                        # Mock S3 client in frames module
+                        with patch("app.processing.frames.s3_client") as mock_s3:
+                            mock_s3.download_file.return_value = True
+                            mock_s3.upload_file.return_value = True
                             
-                            # Verify it completed
-                            assert result is True
-                            
-                            # Verify video status updated
-                            db.refresh(video)
-                            assert video.status == "processed"
-                            
-                            # Verify frames were created
-                            frames = db.query(Frame).filter(Frame.video_id == video_id).all()
-                            assert len(frames) > 0
+                            # Mock get_video_fps
+                            with patch("app.processing.frames.get_video_fps") as mock_fps:
+                                mock_fps.return_value = 30.0
+                                
+                                # Mock tempfile to use our actual temp file
+                                with patch("app.processing.frames.tempfile") as mock_tempfile:
+                                    # Mock NamedTemporaryFile to return our temp file
+                                    def mock_named_tempfile(*args, **kwargs):
+                                        mock_temp = MagicMock()
+                                        mock_temp.name = temp_video_path
+                                        mock_temp.__enter__ = lambda self: self
+                                        mock_temp.__exit__ = lambda *args: None
+                                        return mock_temp
+                                    
+                                    mock_tempfile.NamedTemporaryFile.side_effect = mock_named_tempfile
+                                    
+                                    # Mock TemporaryDirectory
+                                    mock_temp_dir = MagicMock()
+                                    mock_temp_dir.__enter__.return_value = "/tmp/frames"
+                                    mock_temp_dir.__exit__.return_value = None
+                                    mock_tempfile.TemporaryDirectory.return_value = mock_temp_dir
+                                    
+                                    # Mock os.path.exists for frame files
+                                    with patch("app.processing.frames.os.path.exists") as mock_exists:
+                                        def exists_side_effect(path):
+                                            if path == temp_video_path:
+                                                return True
+                                            return path.endswith(".jpg")
+                                        mock_exists.side_effect = exists_side_effect
+                                        
+                                        # Mock open for reading frame files
+                                        with patch("builtins.open", create=True) as mock_open:
+                                            def open_side_effect(path, mode="r"):
+                                                if "frame" in path and mode == "rb":
+                                                    return io.BytesIO(b"fake image data")
+                                                return open(path, mode) if os.path.exists(path) else MagicMock()
+                                            mock_open.side_effect = open_side_effect
+                                            
+                                            # Mock os.unlink to prevent errors
+                                            with patch("app.processing.frames.os.unlink"):
+                                                # Run extraction
+                                                result = extract_frames(video_id, db)
+                                                
+                                                # Verify it completed
+                                                assert result is True
+                                                
+                                                # Verify video status updated
+                                                db.refresh(video)
+                                                assert video.status == "processed"
+                                                
+                                                # Verify frames were created
+                                                frames = db.query(Frame).filter(Frame.video_id == video_id).all()
+                                                assert len(frames) == 8  # Should have 8 event frames
     finally:
         # Clean up temp file
         if os.path.exists(temp_video_path):
