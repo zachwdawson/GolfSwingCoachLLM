@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function UploadPage() {
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -10,6 +12,7 @@ export default function UploadPage() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0]);
+      setResult(null); // Clear previous result
     }
   };
 
@@ -17,6 +20,7 @@ export default function UploadPage() {
     if (!file) return;
 
     setUploading(true);
+    setResult(null);
     const formData = new FormData();
     formData.append("file", file);
 
@@ -29,13 +33,18 @@ export default function UploadPage() {
 
       if (response.ok) {
         const data = await response.json();
-        setResult(`Upload successful! Video ID: ${data.video_id}`);
+        setResult("Upload successful! Redirecting to results...");
+        // Redirect to results page after a brief delay
+        setTimeout(() => {
+          router.push(`/results/${data.video_id}`);
+        }, 1000);
       } else {
-        setResult(`Upload failed: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({ detail: response.statusText }));
+        setResult(`Upload failed: ${errorData.detail || response.statusText}`);
+        setUploading(false);
       }
     } catch (error) {
       setResult(`Error: ${error instanceof Error ? error.message : "Unknown error"}`);
-    } finally {
       setUploading(false);
     }
   };
@@ -43,27 +52,54 @@ export default function UploadPage() {
   return (
     <main style={{ padding: "2rem", maxWidth: "600px", margin: "0 auto" }}>
       <h1>Upload Golf Swing Video</h1>
+      <p style={{ marginTop: "0.5rem", color: "#666" }}>
+        Upload a video of your golf swing to analyze key frames and metrics.
+      </p>
       <div style={{ marginTop: "2rem" }}>
-        <input
-          type="file"
-          accept="video/mp4,video/mov"
-          onChange={handleFileChange}
-          style={{ marginBottom: "1rem" }}
-        />
-        <br />
+        <div style={{ marginBottom: "1rem" }}>
+          <input
+            type="file"
+            accept="video/mp4,video/mov"
+            onChange={handleFileChange}
+            disabled={uploading}
+            style={{
+              padding: "0.5rem",
+              fontSize: "1rem",
+              width: "100%",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              cursor: uploading ? "not-allowed" : "pointer",
+            }}
+          />
+        </div>
         <button
           onClick={handleUpload}
           disabled={!file || uploading}
           style={{
-            padding: "0.5rem 1rem",
+            padding: "0.75rem 1.5rem",
             fontSize: "1rem",
+            backgroundColor: uploading ? "#ccc" : "#0070f3",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
             cursor: uploading ? "not-allowed" : "pointer",
+            fontWeight: "500",
+            transition: "background-color 0.2s",
           }}
         >
-          {uploading ? "Uploading..." : "Upload"}
+          {uploading ? "Uploading..." : "Upload Video"}
         </button>
         {result && (
-          <p style={{ marginTop: "1rem", color: result.includes("successful") ? "green" : "red" }}>
+          <p
+            style={{
+              marginTop: "1rem",
+              padding: "0.75rem",
+              borderRadius: "4px",
+              backgroundColor: result.includes("successful") ? "#d4edda" : "#f8d7da",
+              color: result.includes("successful") ? "#155724" : "#721c24",
+              border: `1px solid ${result.includes("successful") ? "#c3e6cb" : "#f5c6cb"}`,
+            }}
+          >
             {result}
           </p>
         )}

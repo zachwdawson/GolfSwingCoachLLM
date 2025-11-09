@@ -11,11 +11,20 @@ dependencies = [
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.9",
     "boto3>=1.29.0",
     "alembic>=1.12.0",
     "python-multipart>=0.0.6",
+    "pillow>=10.0.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.24.0,<2.0.0",
+    "av>=10.0.0",  # PyAV for video processing
+    "tensorflow>=2.13.0",
+    "tensorflow-hub>=0.15.0",
+    "opencv-python>=4.8.0",
 ]
 
 [project.optional-dependencies]
