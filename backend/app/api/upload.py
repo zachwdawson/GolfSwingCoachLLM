@@ -1,5 +1,6 @@
 import logging
 import uuid
+import json
 from io import BytesIO
 from fastapi import APIRouter, File, UploadFile, HTTPException, status, Depends
 from sqlalchemy import create_engine
@@ -152,13 +153,30 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
             detail=f"Video {video_id} not found",
         )
 
-    # Get frames
-    frames = db.query(Frame).filter(Frame.video_id == video_id).order_by(Frame.index).all()
+    # Get frames - filter to only return the 4 key positions (Address, Top, Impact, Finish)
+    # Event classes: 0=Address, 3=Top, 5=Impact, 7=Finish
+    key_event_classes = [0, 3, 5, 7]
+    frames = (
+        db.query(Frame)
+        .filter(Frame.video_id == video_id)
+        .filter(Frame.event_class.in_(key_event_classes))
+        .order_by(Frame.event_class)
+        .all()
+    )
     
     frame_responses = []
     for frame in frames:
         url = s3_client.generate_presigned_url(frame.s3_key)
         if url:
+            # Parse swing_metrics JSON string to dict
+            swing_metrics = None
+            if frame.swing_metrics:
+                try:
+                    swing_metrics = json.loads(frame.swing_metrics)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
+                    swing_metrics = None
+            
             frame_responses.append(
                 FrameResponse(
                     frame_id=frame.id,
@@ -168,10 +186,50 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
                     width=frame.width,
                     height=frame.height,
                     created_at=frame.created_at.isoformat(),
+                    event_label=frame.event_label,
+                    event_class=frame.event_class,
+                    swing_metrics=swing_metrics,
                 )
             )
 
     return FramesListResponse(video_id=video_id, frames=frame_responses)
+
+
+@router.get("/videos/{video_id}/metrics")
+async def get_metrics(video_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Get aggregated swing metrics for a video."""
+    # Verify video exists
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video {video_id} not found",
+        )
+
+    # Get frames for the 4 key positions (Address, Top, Impact, Finish)
+    key_event_classes = [0, 3, 5, 7]
+    position_map = {0: "address", 3: "top", 5: "impact", 7: "finish"}
+    
+    frames = (
+        db.query(Frame)
+        .filter(Frame.video_id == video_id)
+        .filter(Frame.event_class.in_(key_event_classes))
+        .all()
+    )
+    
+    # Aggregate metrics by position
+    metrics_by_position = {}
+    for frame in frames:
+        if frame.event_class in position_map and frame.swing_metrics:
+            position_name = position_map[frame.event_class]
+            try:
+                metrics_dict = json.loads(frame.swing_metrics)
+                metrics_by_position[position_name] = metrics_dict
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
+                metrics_by_position[position_name] = {}
+    
+    return {"video_id": str(video_id), "metrics": metrics_by_position}
 
 
 @router.post("/videos/{video_id}/process")
