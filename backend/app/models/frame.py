@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey
+from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from app.models.video import Base
 
@@ -16,5 +16,6 @@ class Frame(Base):
     height = Column(Integer, nullable=False)
     event_label = Column(String, nullable=True)  # Event type (e.g., "Address", "Toe-up", etc.)
     event_class = Column(Integer, nullable=True)  # Event class index (0-7)
+    pose_keypoints = Column(Text, nullable=True)  # JSON string of pose keypoints [1,1,17,3] format
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 

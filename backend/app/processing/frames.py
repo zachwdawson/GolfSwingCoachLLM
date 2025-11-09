@@ -3,6 +3,8 @@ import subprocess
 import tempfile
 import os
 import time
+import json
+import numpy as np
 from typing import Optional
 from uuid import UUID
 from PIL import Image
@@ -14,6 +16,7 @@ from app.core.config import settings
 from app.ml.service import get_model
 from app.ml.preprocessing import preprocess_video, prepare_video_for_inference
 from app.ml.inference import process_video_for_events, EVENT_NAMES
+from app.processing.pose_estimation import estimate_pose, draw_pose_overlay
 
 logger = logging.getLogger(__name__)
 
@@ -109,15 +112,61 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                             )
                             continue
 
-                        # Get frame dimensions
+                        # Get frame dimensions and load image
                         with Image.open(frame_path) as img:
                             width, height = img.size
+                            # Load image for pose estimation
+                            image_array = np.array(img.convert("RGB"))
+
+                        # Run pose estimation
+                        try:
+                            logger.info(f"Running pose estimation on frame {frame_index}")
+                            keypoints = estimate_pose(
+                                image_array,
+                                model_name=settings.pose_model_name,
+                                input_size=settings.pose_input_size,
+                            )
+
+                            # Draw pose overlay on image
+                            annotated_image = draw_pose_overlay(
+                                image_array,
+                                keypoints,
+                                keypoint_threshold=settings.pose_keypoint_threshold,
+                            )
+
+                            # Convert annotated image back to PIL Image for saving
+                            annotated_pil = Image.fromarray(annotated_image)
+
+                            # Save annotated frame to temporary file
+                            annotated_frame_path = os.path.join(
+                                temp_dir, f"frame_{frame_index}_annotated.jpg"
+                            )
+                            annotated_pil.save(annotated_frame_path, "JPEG", quality=95)
+
+                            # Convert keypoints to JSON string for database storage
+                            # keypoints is [1, 1, 17, 3] numpy array, convert to list
+                            keypoints_list = keypoints.tolist()
+                            keypoints_json = json.dumps(keypoints_list)
+
+                            # Use annotated frame for upload
+                            frame_to_upload = annotated_frame_path
+                            logger.info(
+                                f"Pose estimation completed for frame {frame_index}"
+                            )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to run pose estimation on frame {frame_index}: {e}",
+                                exc_info=True,
+                            )
+                            # Fall back to original frame if pose estimation fails
+                            frame_to_upload = frame_path
+                            keypoints_json = None
 
                         # Upload frame to S3
                         frame_s3_key = (
                             f"videos/{video_id}/frames/event_{event_class}_{event_label}.jpg"
                         )
-                        with open(frame_path, "rb") as frame_file:
+                        with open(frame_to_upload, "rb") as frame_file:
                             success = s3_client.upload_file(
                                 frame_file,
                                 frame_s3_key,
@@ -136,6 +185,7 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                             height=height,
                             event_label=event_label,
                             event_class=event_class,
+                            pose_keypoints=keypoints_json,
                         )
                         db.add(frame)
                         logger.info(

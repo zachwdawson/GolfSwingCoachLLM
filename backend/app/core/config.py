@@ -10,6 +10,10 @@ class Settings(BaseSettings):
     model_checkpoint_path: str = ""
     model_device: str = ""  # Empty means auto-detect (handled in service layer)
     model_seq_len: int = 64
+    pose_model_name: str = "movenet_thunder"  # "movenet_lightning" or "movenet_thunder"
+    pose_input_size: int = 256  # 192 for lightning, 256 for thunder
+    pose_keypoint_threshold: float = 0.11  # Minimum confidence for drawing keypoints
+    save_annotated_only: bool = True  # If True, replace original with annotated; if False, save both
 
     model_config = SettingsConfigDict(
         env_file=".env",
