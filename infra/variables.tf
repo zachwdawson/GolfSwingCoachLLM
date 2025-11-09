@@ -37,6 +37,7 @@ variable "db_password" {
 variable "subnet_ids" {
   description = "Subnet IDs for RDS and ECS"
   type        = list(string)
+  default     = ["subnet-0e962104467343d37", "subnet-071779c541428cabc"]
 }
 
 variable "allowed_cidr_blocks" {
