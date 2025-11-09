@@ -17,6 +17,7 @@ from app.ml.service import get_model
 from app.ml.preprocessing import preprocess_video, prepare_video_for_inference
 from app.ml.inference import process_video_for_events, EVENT_NAMES
 from app.processing.pose_estimation import estimate_pose, draw_pose_overlay
+from app.processing.swing_metrics import compute_metrics
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,11 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                 # Extract frames using ffmpeg at predicted indices
                 logger.info(f"Extracting {len(event_frames)} event frames")
                 with tempfile.TemporaryDirectory() as temp_dir:
+                    # Dictionary to store keypoints for metrics computation
+                    # Maps position name to keypoints array
+                    swing_keypoints = {}
+                    # Dictionary to store Frame objects for later metrics storage
+                    frame_objects = {}
                     frame_index = 0
                     for event_class, frame_idx in sorted(event_frames.items()):
                         # Calculate timestamp from frame index
@@ -193,7 +199,48 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                             f"(class {event_class}) at frame {frame_idx} "
                             f"({width}x{height})"
                         )
+
+                        # Store keypoints for metrics computation (only for the 4 key positions)
+                        if event_class in [0, 3, 5, 7]:  # address, top, impact, finish
+                            position_map = {0: "address", 3: "top", 5: "impact", 7: "finish"}
+                            position_name = position_map[event_class]
+                            if keypoints_json is not None:
+                                # Convert JSON back to numpy array for metrics computation
+                                keypoints_array = np.array(json.loads(keypoints_json))
+                                swing_keypoints[position_name] = keypoints_array
+                                frame_objects[position_name] = frame
+
                         frame_index += 1
+
+                    # Compute swing metrics if we have all four key positions
+                    if len(swing_keypoints) == 4:
+                        try:
+                            logger.info("Computing swing metrics")
+                            metrics_result = compute_metrics(swing_keypoints)
+
+                            # Store metrics in each frame record
+                            for position_name, frame_obj in frame_objects.items():
+                                if position_name in metrics_result:
+                                    position_metrics = metrics_result[position_name]
+                                    # Convert numpy nan to None for JSON serialization
+                                    metrics_dict = {
+                                        k: (None if (isinstance(v, float) and np.isnan(v)) else v)
+                                        for k, v in position_metrics.items()
+                                    }
+                                    frame_obj.swing_metrics = json.dumps(metrics_dict)
+                                    logger.info(
+                                        f"Stored metrics for {position_name}: {list(metrics_dict.keys())}"
+                                    )
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to compute swing metrics: {e}",
+                                exc_info=True,
+                            )
+                    else:
+                        logger.warning(
+                            f"Not all key positions found for metrics computation. "
+                            f"Found: {list(swing_keypoints.keys())}"
+                        )
 
                     db.commit()
                     video.status = "processed"
