@@ -17,5 +17,6 @@ class Frame(Base):
     event_label = Column(String, nullable=True)  # Event type (e.g., "Address", "Toe-up", etc.)
     event_class = Column(Integer, nullable=True)  # Event class index (0-7)
     pose_keypoints = Column(Text, nullable=True)  # JSON string of pose keypoints [1,1,17,3] format
+    swing_metrics = Column(Text, nullable=True)  # JSON string of swing metrics
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
