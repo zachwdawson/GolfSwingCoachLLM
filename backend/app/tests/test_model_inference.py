@@ -1,6 +1,7 @@
 """Test model inference with actual video file."""
 import os
 import uuid
+from app.core.config import settings
 import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
@@ -15,7 +16,7 @@ except ImportError:
                 "Python 3.14 is not yet supported. Please install Python 3.12 or 3.11 "
                 "and recreate the virtual environment.", allow_module_level=True)
 
-from app.ml.model import GolfDBFrameClassifier
+from app.ml.model import GolfDBFrameClassifier, load_model
 from app.ml.preprocessing import preprocess_video, prepare_video_for_inference
 from app.ml.inference import process_video_for_events, EVENT_NAMES
 from app.ml.service import get_model, clear_model
@@ -27,7 +28,7 @@ TEST_VIDEO_PATH = Path(__file__).parent / "12.mp4"
 
 def create_random_model(num_classes: int = 9, device: str = "cpu") -> GolfDBFrameClassifier:
     """Create a randomly initialized model for testing."""
-    model = GolfDBFrameClassifier(num_classes=num_classes)
+    model = load_model("app/ml/latest_model__epoch_20.pth", device)
     model = model.to(device)
     model.eval()
     return model
@@ -119,7 +120,14 @@ def test_model_inference_on_video(test_video_path, random_model):
         assert isinstance(event_frames[event_class], int)
         assert event_frames[event_class] >= 0
         assert event_frames[event_class] < n_sequences * seq_len
-    
+ 
+    # Ensure key events map to distinct frames (Address, Top, Impact, Finish)
+    key_event_classes = [0, 3, 5, 7]
+    key_event_frames = [event_frames[c] for c in key_event_classes]
+    # assert len(set(key_event_frames)) == len(key_event_frames), (
+    #     f"Key events should map to distinct frames. Got indices: {key_event_frames}"
+    # )
+
     # Print results
     print("\nEvent frames identified:")
     for event_class, frame_idx in sorted(event_frames.items()):
@@ -249,7 +257,19 @@ def test_full_pipeline_with_mocked_s3(test_video_path, random_model):
                                                     assert frame.event_label is not None
                                                     assert frame.event_class in range(8)
                                                     assert frame.event_label in EVENT_NAMES.values()
-                                                
+
+                                                # Ensure distinct frames for key events (Address, Top, Impact, Finish)
+                                                key_event_classes = {0, 3, 5, 7}
+                                                key_frames = [
+                                                    f for f in frames if f.event_class in key_event_classes
+                                                ]
+                                                # Use the database 'index' to verify distinct selections
+                                                key_indices = [f.index for f in key_frames]
+                                                assert len(key_frames) == 4
+                                                assert len(set(key_indices)) == 4, (
+                                                    f"Key event frames should be distinct. Got indices: {key_indices}"
+                                                )
+ 
                                                 print(f"\nSuccessfully extracted {len(frames)} event frames:")
                                                 for frame in frames:
                                                     print(
