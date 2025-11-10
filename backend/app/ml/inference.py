@@ -80,15 +80,24 @@ def extract_event_frames(
     """
     # Apply softmax to the model prediction at each point in time
     # probabilities shape: [N_FRAMES, N_CLASSES]
-    probabilities = F.softmax(logits, dim=1)
-    
-    # For each class (column), find which frame (row) has the maximum probability
-    # event_estimates shape: [N_CLASSES] where each element is the frame index with max prob for that class
+
+    logits = logits.reshape([n_sequences * seq_len, -1])  # Predictions.
+
+    # Apply softmax to the model prediction at each point in time.
+    probabilities = torch.nn.functional.softmax(logits, dim=1)
     event_estimates = torch.argmax(probabilities, dim=0).cpu()
+    event_estimates = event_estimates[:-1]
+
+
+    # probabilities = F.softmax(logits, dim=1)
     
-    # Exclude 'no-event' class (last class, index 8)
-    # We only want the 8 event classes (0-7)
-    event_estimates = event_estimates[:-1]  # Shape: [NUM_EVENTS] = [8]
+    # # For each class (column), find which frame (row) has the maximum probability
+    # # event_estimates shape: [N_CLASSES] where each element is the frame index with max prob for that class
+    # event_estimates = torch.argmax(probabilities, dim=0).cpu()
+    
+    # # Exclude 'no-event' class (last class, index 8)
+    # # We only want the 8 event classes (0-7)
+    # event_estimates = event_estimates[:-1]  # Shape: [NUM_EVENTS] = [8]
     
     # Convert to dictionary mapping event_class (0-7) to frame_index
     event_frames = {}
@@ -96,9 +105,9 @@ def extract_event_frames(
         frame_idx = event_estimates[event_class].item()
         event_frames[event_class] = frame_idx
         
-        logger.debug(
+        logger.info(
             f"Event {event_class} ({EVENT_NAMES[event_class]}): "
-            f"frame {frame_idx}, prob={probabilities[frame_idx, event_class].item():.4f}"
+            f"frame_idx={frame_idx}, prob={probabilities[frame_idx, event_class].item():.4f}"
         )
 
     return event_frames

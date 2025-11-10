@@ -38,12 +38,21 @@ def get_session_local():
 
 def worker_loop():
     """Worker loop that processes tasks from the queue."""
-    SessionLocal = get_session_local()
+    SessionLocal = None
     while worker_running:
         try:
             video_id = task_queue.get(timeout=1)
             if video_id is None:
                 continue
+
+            # Lazy initialization of database connection
+            if SessionLocal is None:
+                try:
+                    SessionLocal = get_session_local()
+                except Exception as e:
+                    logger.error(f"Failed to initialize database connection: {e}", exc_info=True)
+                    task_queue.task_done()
+                    continue
 
             logger.info(f"Processing video: {video_id}")
             db = SessionLocal()

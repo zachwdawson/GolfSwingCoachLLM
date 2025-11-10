@@ -104,7 +104,7 @@ def load_model(checkpoint_path: str, device: str, num_classes: int = 9) -> GolfD
         # Try to load just the state dict first (avoids module import issues)
         try:
             # Load with weights_only=True to avoid unpickling the model class
-            checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=True)
+            checkpoint = torch.load(checkpoint_path, map_location=device)
             state_dict = checkpoint
         except Exception:
             # If weights_only fails, use custom pickle module with torch.load

@@ -94,6 +94,24 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                     db.commit()
                     return False
 
+                # Log the predicted frame indices for debugging
+                logger.info("Model predicted event frames:")
+                frame_idx_to_events = {}  # Track which events map to the same frame_idx
+                for event_class, frame_idx in sorted(event_frames.items()):
+                    event_label = EVENT_NAMES.get(event_class, f"Event_{event_class}")
+                    logger.info(f"  {event_label} (class {event_class}): frame_idx={frame_idx}")
+                    if frame_idx not in frame_idx_to_events:
+                        frame_idx_to_events[frame_idx] = []
+                    frame_idx_to_events[frame_idx].append((event_class, event_label))
+                
+                # Check for duplicate frame indices
+                duplicates = {idx: events for idx, events in frame_idx_to_events.items() if len(events) > 1}
+                if duplicates:
+                    logger.warning(
+                        f"Multiple events mapped to the same frame indices: {duplicates}. "
+                        f"This may cause incorrect frame labeling."
+                    )
+
                 # Extract frames using ffmpeg at predicted indices
                 logger.info(f"Extracting {len(event_frames)} event frames")
                 with tempfile.TemporaryDirectory() as temp_dir:
@@ -105,8 +123,15 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                     frame_index = 0
                     for event_class, frame_idx in sorted(event_frames.items()):
                         # Calculate timestamp from frame index
+                        # frame_idx is the frame index in the clipped video (0 to n_sequences * seq_len - 1)
+                        # We need to map this back to the original video timestamp
                         timestamp = frame_idx / fps
                         event_label = EVENT_NAMES.get(event_class, f"Event_{event_class}")
+
+                        logger.info(
+                            f"Extracting frame for event {event_class} ({event_label}): "
+                            f"frame_idx={frame_idx}, timestamp={timestamp:.3f}s, fps={fps}"
+                        )
 
                         frame_path = os.path.join(temp_dir, f"frame_{frame_index}.jpg")
 
@@ -196,7 +221,9 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                         db.add(frame)
                         logger.info(
                             f"Saved frame {frame_index}: {event_label} "
-                            f"(class {event_class}) at frame {frame_idx} "
+                            f"(class {event_class}) at video frame {frame_idx} "
+                            f"(timestamp {timestamp:.3f}s, fps {fps:.2f}) "
+                            f"-> S3 key: {frame_s3_key} "
                             f"({width}x{height})"
                         )
 
