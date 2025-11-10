@@ -1,6 +1,6 @@
 import logging
 import threading
-from queue import Queue
+from queue import Queue, Empty
 from uuid import UUID
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -52,6 +52,9 @@ def worker_loop():
             finally:
                 db.close()
                 task_queue.task_done()
+        except Empty:
+            # Queue is empty, which is normal - just continue the loop
+            continue
         except Exception as e:
             logger.error(f"Error in worker loop: {e}", exc_info=True)
 

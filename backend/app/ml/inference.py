@@ -64,6 +64,11 @@ def extract_event_frames(
 ) -> dict[int, int]:
     """
     Extract frame indices for each event class from model predictions.
+    
+    Uses the original approach from AG_metrics.py:
+    - Apply softmax to get probabilities
+    - For each class, find the frame with maximum probability (argmax along dim=0)
+    - Exclude 'no-event' class (last class)
 
     Args:
         logits: Model logits [N_FRAMES, N_CLASSES]
@@ -73,22 +78,27 @@ def extract_event_frames(
     Returns:
         Dictionary mapping event_class (0-7) to frame_index
     """
-    # Apply softmax to get probabilities
-    probabilities = F.softmax(logits, dim=1)  # [N_FRAMES, N_CLASSES]
-
-    # For each event class (0-7), find frame with maximum probability
+    # Apply softmax to the model prediction at each point in time
+    # probabilities shape: [N_FRAMES, N_CLASSES]
+    probabilities = F.softmax(logits, dim=1)
+    
+    # For each class (column), find which frame (row) has the maximum probability
+    # event_estimates shape: [N_CLASSES] where each element is the frame index with max prob for that class
+    event_estimates = torch.argmax(probabilities, dim=0).cpu()
+    
+    # Exclude 'no-event' class (last class, index 8)
+    # We only want the 8 event classes (0-7)
+    event_estimates = event_estimates[:-1]  # Shape: [NUM_EVENTS] = [8]
+    
+    # Convert to dictionary mapping event_class (0-7) to frame_index
     event_frames = {}
     for event_class in range(NUM_EVENTS):
-        # Get probabilities for this event class across all frames
-        class_probs = probabilities[:, event_class]  # [N_FRAMES]
-
-        # Find frame with maximum probability
-        frame_idx = torch.argmax(class_probs).item()
+        frame_idx = event_estimates[event_class].item()
         event_frames[event_class] = frame_idx
-
+        
         logger.debug(
             f"Event {event_class} ({EVENT_NAMES[event_class]}): "
-            f"frame {frame_idx}, prob={class_probs[frame_idx].item():.4f}"
+            f"frame {frame_idx}, prob={probabilities[frame_idx, event_class].item():.4f}"
         )
 
     return event_frames

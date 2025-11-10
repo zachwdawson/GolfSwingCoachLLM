@@ -156,12 +156,30 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
     # Get frames - filter to only return the 4 key positions (Address, Top, Impact, Finish)
     # Event classes: 0=Address, 3=Top, 5=Impact, 7=Finish
     key_event_classes = [0, 3, 5, 7]
-    frames = (
+    all_frames = (
         db.query(Frame)
         .filter(Frame.video_id == video_id)
         .filter(Frame.event_class.in_(key_event_classes))
-        .order_by(Frame.event_class)
+        .order_by(Frame.event_class, Frame.created_at.desc())
         .all()
+    )
+    
+    # Group frames by event_class and take the most recent one for each event
+    # This ensures we only return one frame per event class
+    frames_by_class = {}
+    for frame in all_frames:
+        if frame.event_class not in frames_by_class:
+            frames_by_class[frame.event_class] = frame
+        # If multiple frames exist for the same event_class, keep the most recent one
+        elif frame.created_at > frames_by_class[frame.event_class].created_at:
+            frames_by_class[frame.event_class] = frame
+    
+    # Convert to list ordered by event_class
+    frames = [frames_by_class[ec] for ec in key_event_classes if ec in frames_by_class]
+    
+    logger.info(
+        f"Returning {len(frames)} frames for video {video_id}: "
+        f"{[f.event_label for f in frames]}"
     )
     
     frame_responses = []
@@ -176,6 +194,11 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
                 except (json.JSONDecodeError, TypeError):
                     logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
                     swing_metrics = None
+            
+            logger.debug(
+                f"Frame {frame.id}: event_class={frame.event_class}, "
+                f"event_label={frame.event_label}, s3_key={frame.s3_key}"
+            )
             
             frame_responses.append(
                 FrameResponse(

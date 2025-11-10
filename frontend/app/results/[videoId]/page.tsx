@@ -87,7 +87,28 @@ export default function ResultsPage() {
       }
 
       const data = await response.json();
-      setFrames(data.frames || []);
+      // Sort frames by event_class to ensure correct order: Address (0), Top (3), Impact (5), Finish (7)
+      const sortedFrames = (data.frames || []).sort((a: Frame, b: Frame) => {
+        const eventClassOrder = [0, 3, 5, 7]; // Address, Top, Impact, Finish
+        const aIndex = a.event_class !== null ? eventClassOrder.indexOf(a.event_class) : 999;
+        const bIndex = b.event_class !== null ? eventClassOrder.indexOf(b.event_class) : 999;
+        return aIndex - bIndex;
+      });
+      
+      // Add cache-busting parameter to image URLs to prevent browser caching issues
+      // Use frame_id to ensure each frame has a unique cache-busting parameter
+      const framesWithCacheBust = sortedFrames.map((frame: Frame) => ({
+        ...frame,
+        url: `${frame.url}${frame.url.includes('?') ? '&' : '?'}cb=${frame.frame_id}&t=${Date.now()}`,
+      }));
+      
+      console.log('Fetched frames:', framesWithCacheBust.map((f: Frame) => ({
+        event_class: f.event_class,
+        event_label: f.event_label,
+        url: f.url.substring(0, 100) + '...',
+      })));
+      
+      setFrames(framesWithCacheBust);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching frames:", err);
@@ -234,6 +255,7 @@ export default function ResultsPage() {
                     <img
                       src={frame.url}
                       alt={frame.event_label || `Frame ${frame.index}`}
+                      key={`${frame.frame_id}-${frame.event_class}`}
                       style={{
                         position: "absolute",
                         top: 0,
@@ -241,6 +263,9 @@ export default function ResultsPage() {
                         width: "100%",
                         height: "100%",
                         objectFit: "cover",
+                      }}
+                      onError={(e) => {
+                        console.error(`Failed to load image for ${frame.event_label}:`, frame.url);
                       }}
                     />
                   </div>

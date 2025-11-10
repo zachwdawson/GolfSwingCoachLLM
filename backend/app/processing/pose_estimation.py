@@ -179,13 +179,13 @@ def draw_pose_overlay(
                 lineType=cv2.LINE_AA,
             )
 
-    # Draw keypoint circles (magenta with white border)
+    # Draw keypoint circles (magenta with white border) - smaller size
     for i, (x, y) in enumerate(pts):
         if conf[i] > keypoint_threshold:
-            # Draw filled circle (magenta)
-            cv2.circle(out, (x, y), 3, (255, 20, 147), -1, lineType=cv2.LINE_AA)
-            # Draw border circle (white)
-            cv2.circle(out, (x, y), 5, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+            # Draw filled circle (magenta) - reduced from radius 3 to 2
+            cv2.circle(out, (x, y), 2, (255, 20, 147), -1, lineType=cv2.LINE_AA)
+            # Draw border circle (white) - reduced from radius 5 to 3
+            cv2.circle(out, (x, y), 3, (255, 255, 255), 1, lineType=cv2.LINE_AA)
 
     return out
 
