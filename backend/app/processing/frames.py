@@ -25,11 +25,20 @@ logger = logging.getLogger(__name__)
 NUM_EVENT_FRAMES = 8
 
 
-def extract_frames(video_id: UUID, db: Session) -> bool:
+def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = None) -> bool:
     """
     Extract event frames from a video using model-based labeling.
     Saves frames to S3 and writes metadata to database.
+    
+    Args:
+        video_id: UUID of the video to process
+        db: Database session
+        temp_file_path: Optional path to temporary file containing the video.
+                       If provided, uses this file instead of downloading from S3.
     """
+    temp_video_path = None
+    temp_file_owned = False  # Track if we created the temp file (need to clean up)
+    
     try:
         # Get video record
         video = db.query(Video).filter(Video.id == video_id).first()
@@ -49,236 +58,294 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
             db.commit()
             return False
 
-        # Download video from S3 to temp file
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_video:
-            temp_video_path = temp_video.name
-            try:
-                # Download from S3
-                if not s3_client.download_file(video.s3_key, temp_video_path):
-                    logger.error(f"Failed to download video from S3: {video.s3_key}")
+        # Determine video file path: use temp_file_path if provided, otherwise download from S3
+        if temp_file_path:
+            # Use provided temp file
+            if not os.path.exists(temp_file_path):
+                logger.warning(f"Temp file not found: {temp_file_path}, falling back to S3 download")
+                temp_file_path = None
+            else:
+                temp_video_path = temp_file_path
+                temp_file_owned = False  # Don't delete the file, it's managed by upload endpoint
+                logger.info(f"Using temp file for processing: {temp_video_path}")
+        
+        if not temp_video_path:
+            # Fallback: Download video from S3 to temp file
+            logger.info(f"Downloading video from S3: {video.s3_key}")
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as temp_video:
+                temp_video_path = temp_video.name
+                temp_file_owned = True  # We created this, need to clean up
+                try:
+                    # Download from S3
+                    if not s3_client.download_file(video.s3_key, temp_video_path):
+                        logger.error(f"Failed to download video from S3: {video.s3_key}")
+                        video.status = "failed"
+                        db.commit()
+                        return False
+                    logger.info(f"Downloaded video from S3: {video.s3_key}")
+                except Exception as e:
+                    logger.error(f"Error downloading from S3: {e}", exc_info=True)
                     video.status = "failed"
                     db.commit()
                     return False
-                logger.info(f"Downloaded video from S3: {video.s3_key}")
 
-                # Get video FPS for timestamp calculation
-                fps = get_video_fps(temp_video_path)
-                if fps is None:
-                    logger.error(f"Failed to get video FPS: {video_id}")
-                    video.status = "failed"
-                    db.commit()
-                    return False
+        try:
+            # Get video FPS for timestamp calculation
+            fps = get_video_fps(temp_video_path)
+            if fps is None:
+                logger.error(f"Failed to get video FPS: {video_id}")
+                video.status = "failed"
+                db.commit()
+                return False
 
-                # Preprocess video for model
-                logger.info("Preprocessing video for model inference")
-                preprocessed_video = preprocess_video(temp_video_path)
+            # Preprocess video for model
+            logger.info("Preprocessing video for model inference")
+            preprocessed_video = preprocess_video(temp_video_path)
 
-                # Prepare video for inference
-                device = next(model.parameters()).device
-                video_tensor, n_sequences = prepare_video_for_inference(
-                    preprocessed_video, settings.model_seq_len, str(device)
+            # Prepare video for inference
+            device = next(model.parameters()).device
+            video_tensor, n_sequences = prepare_video_for_inference(
+                preprocessed_video, settings.model_seq_len, str(device)
+            )
+
+            # Run model inference to get event frames
+            logger.info("Running model inference to identify event frames")
+            start_time = time.time()
+            event_frames = process_video_for_events(
+                model, video_tensor, n_sequences, settings.model_seq_len
+            )
+            inference_time = time.time() - start_time
+            logger.info(f"Model inference completed in {inference_time:.2f}s")
+
+            if not event_frames:
+                logger.error("No event frames identified by model")
+                video.status = "failed"
+                db.commit()
+                return False
+
+            # Log the predicted frame indices for debugging
+            logger.info("Model predicted event frames:")
+            frame_idx_to_events = {}  # Track which events map to the same frame_idx
+            for event_class, frame_idx in sorted(event_frames.items()):
+                event_label = EVENT_NAMES.get(event_class, f"Event_{event_class}")
+                logger.info(f"  {event_label} (class {event_class}): frame_idx={frame_idx}")
+                if frame_idx not in frame_idx_to_events:
+                    frame_idx_to_events[frame_idx] = []
+                frame_idx_to_events[frame_idx].append((event_class, event_label))
+            
+            # Check for duplicate frame indices
+            duplicates = {idx: events for idx, events in frame_idx_to_events.items() if len(events) > 1}
+            if duplicates:
+                logger.warning(
+                    f"Multiple events mapped to the same frame indices: {duplicates}. "
+                    f"This may cause incorrect frame labeling."
                 )
 
-                # Run model inference to get event frames
-                logger.info("Running model inference to identify event frames")
-                start_time = time.time()
-                event_frames = process_video_for_events(
-                    model, video_tensor, n_sequences, settings.model_seq_len
-                )
-                inference_time = time.time() - start_time
-                logger.info(f"Model inference completed in {inference_time:.2f}s")
-
-                if not event_frames:
-                    logger.error("No event frames identified by model")
-                    video.status = "failed"
-                    db.commit()
-                    return False
-
-                # Log the predicted frame indices for debugging
-                logger.info("Model predicted event frames:")
-                frame_idx_to_events = {}  # Track which events map to the same frame_idx
+            # Extract frames using ffmpeg at predicted indices
+            logger.info(f"Extracting {len(event_frames)} event frames")
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Dictionary to store keypoints for metrics computation
+                # Maps position name to keypoints array
+                swing_keypoints = {}
+                # Dictionary to store Frame objects for later metrics storage
+                frame_objects = {}
+                frame_index = 0
                 for event_class, frame_idx in sorted(event_frames.items()):
+                    # Calculate timestamp from frame index
+                    # frame_idx is the frame index in the clipped video (0 to n_sequences * seq_len - 1)
+                    # We need to map this back to the original video timestamp
+                    timestamp = frame_idx / fps
                     event_label = EVENT_NAMES.get(event_class, f"Event_{event_class}")
-                    logger.info(f"  {event_label} (class {event_class}): frame_idx={frame_idx}")
-                    if frame_idx not in frame_idx_to_events:
-                        frame_idx_to_events[frame_idx] = []
-                    frame_idx_to_events[frame_idx].append((event_class, event_label))
-                
-                # Check for duplicate frame indices
-                duplicates = {idx: events for idx, events in frame_idx_to_events.items() if len(events) > 1}
-                if duplicates:
-                    logger.warning(
-                        f"Multiple events mapped to the same frame indices: {duplicates}. "
-                        f"This may cause incorrect frame labeling."
+
+                    logger.info(
+                        f"Extracting frame for event {event_class} ({event_label}): "
+                        f"frame_idx={frame_idx}, timestamp={timestamp:.3f}s, fps={fps}"
                     )
 
-                # Extract frames using ffmpeg at predicted indices
-                logger.info(f"Extracting {len(event_frames)} event frames")
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    # Dictionary to store keypoints for metrics computation
-                    # Maps position name to keypoints array
-                    swing_keypoints = {}
-                    # Dictionary to store Frame objects for later metrics storage
-                    frame_objects = {}
-                    frame_index = 0
-                    for event_class, frame_idx in sorted(event_frames.items()):
-                        # Calculate timestamp from frame index
-                        # frame_idx is the frame index in the clipped video (0 to n_sequences * seq_len - 1)
-                        # We need to map this back to the original video timestamp
-                        timestamp = frame_idx / fps
-                        event_label = EVENT_NAMES.get(event_class, f"Event_{event_class}")
+                    frame_path = os.path.join(temp_dir, f"frame_{frame_index}.jpg")
 
-                        logger.info(
-                            f"Extracting frame for event {event_class} ({event_label}): "
-                            f"frame_idx={frame_idx}, timestamp={timestamp:.3f}s, fps={fps}"
+                    # Extract frame using ffmpeg
+                    if not extract_single_frame(temp_video_path, timestamp, frame_path):
+                        logger.error(
+                            f"Failed to extract frame for event {event_class} "
+                            f"({event_label}) at {timestamp}s"
+                        )
+                        continue
+
+                    # Get frame dimensions and load image
+                    with Image.open(frame_path) as img:
+                        width, height = img.size
+                        # Load image for pose estimation
+                        image_array = np.array(img.convert("RGB"))
+
+                    # Run pose estimation
+                    try:
+                        logger.info(f"Running pose estimation on frame {frame_index}")
+                        keypoints = estimate_pose(
+                            image_array,
+                            model_name=settings.pose_model_name,
+                            input_size=settings.pose_input_size,
                         )
 
-                        frame_path = os.path.join(temp_dir, f"frame_{frame_index}.jpg")
+                        # Draw pose overlay on image
+                        annotated_image = draw_pose_overlay(
+                            image_array,
+                            keypoints,
+                            keypoint_threshold=settings.pose_keypoint_threshold,
+                        )
 
-                        # Extract frame using ffmpeg
-                        if not extract_single_frame(temp_video_path, timestamp, frame_path):
-                            logger.error(
-                                f"Failed to extract frame for event {event_class} "
-                                f"({event_label}) at {timestamp}s"
-                            )
+                        # Convert annotated image back to PIL Image for saving
+                        annotated_pil = Image.fromarray(annotated_image)
+
+                        # Save annotated frame to temporary file
+                        annotated_frame_path = os.path.join(
+                            temp_dir, f"frame_{frame_index}_annotated.jpg"
+                        )
+                        annotated_pil.save(annotated_frame_path, "JPEG", quality=95)
+
+                        # Convert keypoints to JSON string for database storage
+                        # keypoints is [1, 1, 17, 3] numpy array, convert to list
+                        keypoints_list = keypoints.tolist()
+                        keypoints_json = json.dumps(keypoints_list)
+
+                        # Use annotated frame for upload
+                        frame_to_upload = annotated_frame_path
+                        logger.info(
+                            f"Pose estimation completed for frame {frame_index}"
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to run pose estimation on frame {frame_index}: {e}",
+                            exc_info=True,
+                        )
+                        # Fall back to original frame if pose estimation fails
+                        frame_to_upload = frame_path
+                        keypoints_json = None
+
+                    # Upload frame to S3
+                    frame_s3_key = (
+                        f"videos/{video_id}/frames/event_{event_class}_{event_label}.jpg"
+                    )
+                    with open(frame_to_upload, "rb") as frame_file:
+                        success = s3_client.upload_file(
+                            frame_file,
+                            frame_s3_key,
+                            "image/jpeg",
+                        )
+                        if not success:
+                            logger.error(f"Failed to upload frame {frame_index} to S3")
                             continue
 
-                        # Get frame dimensions and load image
-                        with Image.open(frame_path) as img:
-                            width, height = img.size
-                            # Load image for pose estimation
-                            image_array = np.array(img.convert("RGB"))
+                    # Save frame metadata to database
+                    frame = Frame(
+                        video_id=video_id,
+                        index=frame_index,
+                        s3_key=frame_s3_key,
+                        width=width,
+                        height=height,
+                        event_label=event_label,
+                        event_class=event_class,
+                        pose_keypoints=keypoints_json,
+                    )
+                    db.add(frame)
+                    logger.info(
+                        f"Saved frame {frame_index}: {event_label} "
+                        f"(class {event_class}) at video frame {frame_idx} "
+                        f"(timestamp {timestamp:.3f}s, fps {fps:.2f}) "
+                        f"-> S3 key: {frame_s3_key} "
+                        f"({width}x{height})"
+                    )
 
-                        # Run pose estimation
-                        try:
-                            logger.info(f"Running pose estimation on frame {frame_index}")
-                            keypoints = estimate_pose(
-                                image_array,
-                                model_name=settings.pose_model_name,
-                                input_size=settings.pose_input_size,
-                            )
+                    # Store keypoints for metrics computation (only for the 4 key positions)
+                    if event_class in [0, 3, 5, 7]:  # address, top, impact, finish
+                        position_map = {0: "address", 3: "top", 5: "impact", 7: "finish"}
+                        position_name = position_map[event_class]
+                        if keypoints_json is not None:
+                            # Convert JSON back to numpy array for metrics computation
+                            keypoints_array = np.array(json.loads(keypoints_json))
+                            swing_keypoints[position_name] = keypoints_array
+                            frame_objects[position_name] = frame
 
-                            # Draw pose overlay on image
-                            annotated_image = draw_pose_overlay(
-                                image_array,
-                                keypoints,
-                                keypoint_threshold=settings.pose_keypoint_threshold,
-                            )
+                    frame_index += 1
 
-                            # Convert annotated image back to PIL Image for saving
-                            annotated_pil = Image.fromarray(annotated_image)
+                # Compute swing metrics if we have all four key positions
+                if len(swing_keypoints) == 4:
+                    try:
+                        logger.info("Computing swing metrics")
+                        metrics_result = compute_metrics(swing_keypoints)
 
-                            # Save annotated frame to temporary file
-                            annotated_frame_path = os.path.join(
-                                temp_dir, f"frame_{frame_index}_annotated.jpg"
-                            )
-                            annotated_pil.save(annotated_frame_path, "JPEG", quality=95)
-
-                            # Convert keypoints to JSON string for database storage
-                            # keypoints is [1, 1, 17, 3] numpy array, convert to list
-                            keypoints_list = keypoints.tolist()
-                            keypoints_json = json.dumps(keypoints_list)
-
-                            # Use annotated frame for upload
-                            frame_to_upload = annotated_frame_path
-                            logger.info(
-                                f"Pose estimation completed for frame {frame_index}"
-                            )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to run pose estimation on frame {frame_index}: {e}",
-                                exc_info=True,
-                            )
-                            # Fall back to original frame if pose estimation fails
-                            frame_to_upload = frame_path
-                            keypoints_json = None
-
-                        # Upload frame to S3
-                        frame_s3_key = (
-                            f"videos/{video_id}/frames/event_{event_class}_{event_label}.jpg"
+                        # Store metrics in each frame record
+                        for position_name, frame_obj in frame_objects.items():
+                            if position_name in metrics_result:
+                                position_metrics = metrics_result[position_name]
+                                # Convert numpy nan to None for JSON serialization
+                                metrics_dict = {
+                                    k: (None if (isinstance(v, float) and np.isnan(v)) else v)
+                                    for k, v in position_metrics.items()
+                                }
+                                frame_obj.swing_metrics = json.dumps(metrics_dict)
+                                logger.info(
+                                    f"Stored metrics for {position_name}: {metrics_dict}"
+                                )
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to compute swing metrics: {e}",
+                            exc_info=True,
                         )
-                        with open(frame_to_upload, "rb") as frame_file:
-                            success = s3_client.upload_file(
-                                frame_file,
-                                frame_s3_key,
-                                "image/jpeg",
-                            )
-                            if not success:
-                                logger.error(f"Failed to upload frame {frame_index} to S3")
-                                continue
+                else:
+                    logger.warning(
+                        f"Not all key positions found for metrics computation. "
+                        f"Found: {list(swing_keypoints.keys())}"
+                    )
 
-                        # Save frame metadata to database
-                        frame = Frame(
-                            video_id=video_id,
-                            index=frame_index,
-                            s3_key=frame_s3_key,
-                            width=width,
-                            height=height,
-                            event_label=event_label,
-                            event_class=event_class,
-                            pose_keypoints=keypoints_json,
+                db.commit()
+                video.status = "processed"
+                db.commit()
+                logger.info(f"Successfully processed video: {video_id}")
+            
+            # Upload video to S3 after successful processing
+            # This is done here so we only upload if processing succeeded
+            if temp_video_path and os.path.exists(temp_video_path):
+                try:
+                    logger.info(f"Uploading processed video to S3: {video.s3_key}")
+                    with open(temp_video_path, "rb") as video_file:
+                        # Determine content type from s3_key extension
+                        content_type = "video/mp4"  # default
+                        if video.s3_key.endswith(".mov") or video.s3_key.endswith(".MOV"):
+                            content_type = "video/quicktime"
+                        
+                        success = s3_client.upload_file(
+                            video_file,
+                            video.s3_key,
+                            content_type
                         )
-                        db.add(frame)
-                        logger.info(
-                            f"Saved frame {frame_index}: {event_label} "
-                            f"(class {event_class}) at video frame {frame_idx} "
-                            f"(timestamp {timestamp:.3f}s, fps {fps:.2f}) "
-                            f"-> S3 key: {frame_s3_key} "
-                            f"({width}x{height})"
-                        )
+                        if success:
+                            logger.info(f"Successfully uploaded video to S3: {video.s3_key}")
+                        else:
+                            logger.warning(f"Failed to upload video to S3: {video.s3_key}, but processing succeeded")
+                except Exception as e:
+                    logger.error(f"Error uploading video to S3: {e}", exc_info=True)
+                    # Don't fail processing if S3 upload fails - video is already processed
+            
+            return True
 
-                        # Store keypoints for metrics computation (only for the 4 key positions)
-                        if event_class in [0, 3, 5, 7]:  # address, top, impact, finish
-                            position_map = {0: "address", 3: "top", 5: "impact", 7: "finish"}
-                            position_name = position_map[event_class]
-                            if keypoints_json is not None:
-                                # Convert JSON back to numpy array for metrics computation
-                                keypoints_array = np.array(json.loads(keypoints_json))
-                                swing_keypoints[position_name] = keypoints_array
-                                frame_objects[position_name] = frame
-
-                        frame_index += 1
-
-                    # Compute swing metrics if we have all four key positions
-                    if len(swing_keypoints) == 4:
-                        try:
-                            logger.info("Computing swing metrics")
-                            metrics_result = compute_metrics(swing_keypoints)
-
-                            # Store metrics in each frame record
-                            for position_name, frame_obj in frame_objects.items():
-                                if position_name in metrics_result:
-                                    position_metrics = metrics_result[position_name]
-                                    # Convert numpy nan to None for JSON serialization
-                                    metrics_dict = {
-                                        k: (None if (isinstance(v, float) and np.isnan(v)) else v)
-                                        for k, v in position_metrics.items()
-                                    }
-                                    frame_obj.swing_metrics = json.dumps(metrics_dict)
-                                    logger.info(
-                                        f"Stored metrics for {position_name}: {metrics_dict}"
-                                    )
-                        except Exception as e:
-                            logger.error(
-                                f"Failed to compute swing metrics: {e}",
-                                exc_info=True,
-                            )
-                    else:
-                        logger.warning(
-                            f"Not all key positions found for metrics computation. "
-                            f"Found: {list(swing_keypoints.keys())}"
-                        )
-
-                    db.commit()
-                    video.status = "processed"
-                    db.commit()
-                    logger.info(f"Successfully processed video: {video_id}")
-                    return True
-
-            finally:
-                # Clean up temp video file
-                if os.path.exists(temp_video_path):
+        finally:
+            # Clean up temp video file only if we created it (downloaded from S3)
+            # If temp_file_owned is False, the file is managed by the upload endpoint
+            if temp_file_owned and temp_video_path and os.path.exists(temp_video_path):
+                try:
                     os.unlink(temp_video_path)
+                    logger.debug(f"Cleaned up temp video file: {temp_video_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp video file {temp_video_path}: {e}")
+            elif temp_video_path and not temp_file_owned:
+                # Clean up temp file from upload endpoint after processing
+                try:
+                    if os.path.exists(temp_video_path):
+                        os.unlink(temp_video_path)
+                        logger.debug(f"Cleaned up temp video file from upload: {temp_video_path}")
+                except Exception as e:
+                    logger.warning(f"Failed to clean up temp video file {temp_video_path}: {e}")
 
     except Exception as e:
         logger.error(f"Error processing video {video_id}: {e}", exc_info=True)

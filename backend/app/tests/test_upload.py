@@ -42,7 +42,7 @@ def mock_s3_client():
         yield mock
 
 
-def test_upload_video_success(client, mock_s3_client):
+def test_upload_video_success(client, mock_s3_client, test_db):
     """Test successful video upload."""
     video_content = b"fake video content" * 1000  # ~17KB
     video_file = io.BytesIO(video_content)
@@ -58,7 +58,18 @@ def test_upload_video_success(client, mock_s3_client):
     assert "video_id" in data
     assert "s3_key" in data
     assert data["s3_key"].startswith("videos/")
-    mock_s3_client.upload_file.assert_called_once()
+    # Video is no longer uploaded to S3 immediately - it's saved to temp file
+    # and will be uploaded after processing completes
+    mock_s3_client.upload_file.assert_not_called()
+    
+    # Verify video record was created in database
+    video_id = uuid.UUID(data["video_id"])
+    db = TestSessionLocal()
+    video = db.query(Video).filter(Video.id == video_id).first()
+    assert video is not None
+    assert video.s3_key == data["s3_key"]
+    assert video.status == "uploaded"
+    db.close()
 
 
 def test_upload_video_invalid_mime_type(client):

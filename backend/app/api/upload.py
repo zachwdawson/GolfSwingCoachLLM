@@ -1,6 +1,8 @@
 import logging
 import uuid
 import json
+import tempfile
+import os
 from io import BytesIO
 from fastapi import APIRouter, File, UploadFile, HTTPException, status, Depends
 from sqlalchemy import create_engine
@@ -83,35 +85,63 @@ async def upload_video(file: UploadFile = File(...), db: Session = Depends(get_d
     file_extension = file.filename.split(".")[-1] if "." in file.filename else "mp4"
     s3_key = f"videos/{video_id}/raw.{file_extension}"
 
-    # Upload to S3
-    file_obj = BytesIO(content)
-    success = s3_client.upload_file(file_obj, s3_key, file.content_type)
-
-    if not success:
-        logger.error(f"Failed to upload to S3: {s3_key}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to upload file to storage",
-        )
-
-    # Save to database
+    # Save video to temporary file for processing
+    # This avoids the S3 upload/download roundtrip
+    temp_file = None
+    temp_file_path = None
     try:
-        video = Video(id=video_id, s3_key=s3_key, status="uploaded")
-        db.add(video)
-        db.commit()
-        db.refresh(video)
-        logger.info(f"Video uploaded: {video_id}, s3_key: {s3_key}")
+        # Create a temporary file with the video content
+        temp_file = tempfile.NamedTemporaryFile(
+            mode='wb',
+            suffix=f".{file_extension}",
+            delete=False
+        )
+        temp_file_path = temp_file.name
+        temp_file.write(content)
+        temp_file.flush()
+        temp_file.close()
+        temp_file = None  # Close the file handle, but keep the file
+        logger.info(f"Saved video to temp file: {temp_file_path}")
+
+        # Save to database (video not yet in S3, will be uploaded after processing)
+        try:
+            video = Video(id=video_id, s3_key=s3_key, status="uploaded")
+            db.add(video)
+            db.commit()
+            db.refresh(video)
+            logger.info(f"Video record created: {video_id}, s3_key: {s3_key}")
+        except Exception as e:
+            logger.error(f"Database error: {e}")
+            db.rollback()
+            # Clean up temp file on database error
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to save video record",
+            )
+
+        # Enqueue frame extraction with temp file path
+        enqueue_frame_extraction(video_id, temp_file_path=temp_file_path)
+        logger.info(f"Enqueued video for frame extraction: {video_id} with temp file: {temp_file_path}")
+
     except Exception as e:
-        logger.error(f"Database error: {e}")
-        db.rollback()
+        logger.error(f"Error saving video to temp file: {e}", exc_info=True)
+        # Clean up temp file on error
+        if temp_file:
+            try:
+                temp_file.close()
+            except Exception:
+                pass
+        if temp_file_path and os.path.exists(temp_file_path):
+            try:
+                os.unlink(temp_file_path)
+            except Exception:
+                pass
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save video record",
+            detail="Failed to save video file",
         )
-
-    # Enqueue frame extraction
-    enqueue_frame_extraction(video_id)
-    logger.info(f"Enqueued video for frame extraction: {video_id}")
 
     return VideoCreate(video_id=video_id, s3_key=s3_key)
 

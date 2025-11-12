@@ -1,6 +1,7 @@
 import logging
 import threading
 from queue import Queue, Empty
+from typing import Optional, Tuple
 from uuid import UUID
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
@@ -12,6 +13,7 @@ from app.models.frame import Frame  # Import to ensure table is created
 logger = logging.getLogger(__name__)
 
 # Simple in-process task queue
+# Queue items are tuples: (video_id: UUID, temp_file_path: Optional[str])
 task_queue = Queue()
 worker_thread = None
 worker_running = False
@@ -41,9 +43,17 @@ def worker_loop():
     SessionLocal = None
     while worker_running:
         try:
-            video_id = task_queue.get(timeout=1)
-            if video_id is None:
+            task = task_queue.get(timeout=1)
+            if task is None:
                 continue
+
+            # Handle both old format (just UUID) and new format (tuple)
+            if isinstance(task, tuple):
+                video_id, temp_file_path = task
+            else:
+                # Backward compatibility: if just UUID is passed, no temp file
+                video_id = task
+                temp_file_path = None
 
             # Lazy initialization of database connection
             if SessionLocal is None:
@@ -54,10 +64,10 @@ def worker_loop():
                     task_queue.task_done()
                     continue
 
-            logger.info(f"Processing video: {video_id}")
+            logger.info(f"Processing video: {video_id}, temp_file: {temp_file_path}")
             db = SessionLocal()
             try:
-                extract_frames(video_id, db)
+                extract_frames(video_id, db, temp_file_path=temp_file_path)
             finally:
                 db.close()
                 task_queue.task_done()
@@ -68,8 +78,19 @@ def worker_loop():
             logger.error(f"Error in worker loop: {e}", exc_info=True)
 
 
-def enqueue_frame_extraction(video_id: UUID):
-    """Enqueue a video for frame extraction."""
-    task_queue.put(video_id)
-    logger.info(f"Enqueued video for processing: {video_id}")
+def enqueue_frame_extraction(video_id: UUID, temp_file_path: Optional[str] = None):
+    """Enqueue a video for frame extraction.
+    
+    Args:
+        video_id: UUID of the video to process
+        temp_file_path: Optional path to temporary file containing the video.
+                       If provided, processing will use this file instead of downloading from S3.
+    """
+    if temp_file_path:
+        task_queue.put((video_id, temp_file_path))
+        logger.info(f"Enqueued video for processing: {video_id} with temp file: {temp_file_path}")
+    else:
+        # Backward compatibility: if no temp file, just pass video_id
+        task_queue.put(video_id)
+        logger.info(f"Enqueued video for processing: {video_id} (will download from S3)")
 
