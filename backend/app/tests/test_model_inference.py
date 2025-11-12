@@ -23,7 +23,7 @@ from app.ml.service import get_model, clear_model
 
 
 # Path to test video file
-TEST_VIDEO_PATH = Path(__file__).parent / "12.mp4"
+TEST_VIDEO_PATH = Path(__file__).parent / "1392.mp4"
 
 
 def create_random_model(num_classes: int = 9, device: str = "cpu") -> GolfDBFrameClassifier:
@@ -124,9 +124,9 @@ def test_model_inference_on_video(test_video_path, random_model):
     # Ensure key events map to distinct frames (Address, Top, Impact, Finish)
     key_event_classes = [0, 3, 5, 7]
     key_event_frames = [event_frames[c] for c in key_event_classes]
-    # assert len(set(key_event_frames)) == len(key_event_frames), (
-    #     f"Key events should map to distinct frames. Got indices: {key_event_frames}"
-    # )
+    assert len(set(key_event_frames)) == len(key_event_frames), (
+        f"Key events should map to distinct frames. Got indices: {key_event_frames}"
+    )
 
     # Print results
     print("\nEvent frames identified:")

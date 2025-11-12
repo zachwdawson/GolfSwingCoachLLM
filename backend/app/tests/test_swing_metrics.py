@@ -74,12 +74,11 @@ def test_angle_deg_none():
 
 def test_line_angle_deg():
     """Test line angle calculation."""
-    # Vertical line going up (aligned with target vector (0, -1))
-    # In image coords (y-down), going up means decreasing y
-    pt1 = np.array([0.0, 1.0])  # Lower point
-    pt2 = np.array([0.0, 0.0])  # Upper point (going up)
+    # Horizontal line (aligned with target vector (1, 0))
+    pt1 = np.array([0.0, 0.5])  # Left point
+    pt2 = np.array([1.0, 0.5])  # Right point (horizontal)
     angle = line_angle_deg(pt1, pt2)
-    assert np.isclose(abs(angle), 0.0, atol=1.0)
+    assert np.isclose(angle, 0.0, atol=1.0)
 
 
 def test_compute_address_metrics_synthetic_square():
@@ -100,10 +99,10 @@ def test_compute_address_metrics_synthetic_square():
 
     metrics = compute_address_metrics(keypoints)
 
-    # Shoulder line should be horizontal, so angle to vertical should be ~90°
+    # Shoulder line should be horizontal, so angle to target line should be ~0°
     assert "shoulder_to_target_deg" in metrics
-    # For horizontal line, angle to vertical should be close to 90°
-    assert not np.isnan(metrics["shoulder_to_target_deg"])
+    # For horizontal line, angle to horizontal target line should be close to 0°
+    assert np.isclose(metrics["shoulder_to_target_deg"], 0.0, atol=1.0)
 
     # Spine tilt should be reasonable (forward lean)
     assert "spine_tilt_deg" in metrics
@@ -120,6 +119,7 @@ def test_compute_top_metrics_foreshortening():
     address_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
     address_keypoints[0, 0, 5, :] = [0.4, 0.3, 0.9]  # left shoulder
     address_keypoints[0, 0, 6, :] = [0.4, 0.7, 0.9]  # right shoulder
+    # Hip width at address = 0.2 (from x=0.4 to x=0.6)
     address_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
     address_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
 
@@ -128,8 +128,10 @@ def test_compute_top_metrics_foreshortening():
     top_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
     top_keypoints[0, 0, 5, :] = [0.4, 0.4, 0.9]  # left shoulder (moved toward center)
     top_keypoints[0, 0, 6, :] = [0.4, 0.6, 0.9]  # right shoulder (moved toward center)
-    top_keypoints[0, 0, 11, :] = [0.6, 0.45, 0.9]  # left hip
-    top_keypoints[0, 0, 12, :] = [0.6, 0.55, 0.9]  # right hip
+    # Hip width at top = 0.85 * 0.2 = 0.17 (from x=0.415 to x=0.585)
+    # This gives ratio = 0.17/0.2 = 0.85, so arccos(0.85) ≈ 31.8°
+    top_keypoints[0, 0, 11, :] = [0.6, 0.415, 0.9]  # left hip
+    top_keypoints[0, 0, 12, :] = [0.6, 0.585, 0.9]  # right hip
 
     metrics = compute_top_metrics(top_keypoints, address_keypoints)
 
@@ -139,44 +141,66 @@ def test_compute_top_metrics_foreshortening():
     # Should be approximately 60 degrees
     assert 55.0 <= metrics["shoulder_turn_deg"] <= 65.0
 
-    # X-factor should be computed
+    # Pelvis turn should be ~31.8° (arccos(0.85) ≈ 31.8°)
+    assert "pelvis_turn_deg" in metrics
+    assert not np.isnan(metrics["pelvis_turn_deg"])
+    assert 28.0 <= metrics["pelvis_turn_deg"] <= 35.0
+
+    # X-factor should be computed: ~60° - ~31.8° ≈ 28-30°
     assert "x_factor_deg" in metrics
     assert not np.isnan(metrics["x_factor_deg"])
+    assert 25.0 <= metrics["x_factor_deg"] <= 35.0
 
 
 def test_compute_impact_metrics_known_angles():
     """Test impact metrics with known rotation angles."""
     keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
 
-    # Create hips rotated ~40° from vertical
-    # For 40° rotation, if vertical is (0, -1), rotated line is approximately
-    # at angle. We'll set points to create this angle.
-    # Hip line rotated 40°: points at angle
-    keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
-    keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
+    # Create hips rotated ~40° from horizontal target line
+    # For 40° from horizontal: tan(40°) ≈ 0.839
+    # If horizontal distance is 0.2, vertical offset is 0.2 * 0.839 ≈ 0.168
+    # Line from right hip to left hip: going left (dx = -0.2)
+    # For 40° rotation, dy should be such that the angle is 40°
+    # In image coords (y-down), if we want 40° from horizontal going left:
+    # The line vector should be (-0.2 * cos(40°), 0.2 * sin(40°)) = (-0.153, 0.129)
+    # So if right hip is at (0.6, 0.6), left hip should be at (0.6 - 0.153, 0.6 + 0.129) = (0.447, 0.729)
+    # But let's simplify: use horizontal distance 0.2, vertical offset 0.168
+    # Right hip at (0.6, 0.6), left hip at (0.4, 0.6 + 0.168) = (0.4, 0.768)
+    keypoints[0, 0, 11, :] = [0.768, 0.4, 0.9]  # left hip (y, x, score)
+    keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip (y, x, score)
 
-    # Shoulders rotated ~15° from vertical
-    keypoints[0, 0, 5, :] = [0.4, 0.45, 0.9]  # left shoulder
-    keypoints[0, 0, 6, :] = [0.4, 0.55, 0.9]  # right shoulder
+    # Shoulders rotated ~15° from horizontal target line
+    # tan(15°) ≈ 0.268, if horizontal distance is 0.1, vertical offset is 0.1 * 0.268 ≈ 0.027
+    # Right shoulder at (0.4, 0.55), left shoulder at (0.45, 0.4 + 0.027) = (0.45, 0.427)
+    keypoints[0, 0, 5, :] = [0.427, 0.45, 0.9]  # left shoulder (y, x, score)
+    keypoints[0, 0, 6, :] = [0.4, 0.55, 0.9]  # right shoulder (y, x, score)
 
-    # Lead forearm (elbow to wrist)
-    keypoints[0, 0, 7, :] = [0.5, 0.5, 0.9]  # left elbow
-    keypoints[0, 0, 9, :] = [0.55, 0.5, 0.9]  # left wrist (vertical)
+    # Lead forearm (elbow to wrist) - vertical (going up in image, decreasing y)
+    keypoints[0, 0, 7, :] = [0.5, 0.5, 0.9]  # left elbow (y, x, score)
+    keypoints[0, 0, 9, :] = [0.4, 0.5, 0.9]  # left wrist (vertical, going up, y decreases)
 
     metrics = compute_impact_metrics(keypoints)
 
     assert "hip_open_deg" in metrics
     assert not np.isnan(metrics["hip_open_deg"])
+    # Should be approximately 40° ± 5° (may vary slightly due to coordinate system)
+    assert 35.0 <= metrics["hip_open_deg"] <= 45.0
 
     assert "shoulder_open_deg" in metrics
     assert not np.isnan(metrics["shoulder_open_deg"])
+    # Should be approximately 15° ± 5° (may vary slightly)
+    assert 10.0 <= metrics["shoulder_open_deg"] <= 20.0
 
     assert "forward_lean_deg" in metrics
     assert not np.isnan(metrics["forward_lean_deg"])
+    # Should be close to 0° (vertical)
+    assert metrics["forward_lean_deg"] <= 5.0
 
 
 def test_compute_finish_metrics_elbow_angle():
     """Test finish metrics with straight lead arm."""
+    # Address position: shoulder width = 0.4 (from x=0.3 to x=0.7)
+    # In normalized coords, this is 0.4. For test, we'll use this as baseline.
     address_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
     address_keypoints[0, 0, 5, :] = [0.4, 0.3, 0.9]  # left shoulder
     address_keypoints[0, 0, 6, :] = [0.4, 0.7, 0.9]  # right shoulder
@@ -189,11 +213,19 @@ def test_compute_finish_metrics_elbow_angle():
     finish_keypoints[0, 0, 9, :] = [0.5, 0.5, 0.9]  # left wrist (straight line)
 
     finish_keypoints[0, 0, 6, :] = [0.3, 0.6, 0.9]  # right shoulder
+    # Hip center directly over lead ankle: both at x=0.5
     finish_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
     finish_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
-    finish_keypoints[0, 0, 15, :] = [0.7, 0.4, 0.9]  # left ankle
+    # Hip center is at x = (0.4 + 0.6) / 2 = 0.5
+    finish_keypoints[0, 0, 15, :] = [0.7, 0.5, 0.9]  # left ankle (same x as hip center)
 
     metrics = compute_finish_metrics(finish_keypoints, address_keypoints)
+
+    # Balance offset should be ~0 (hip center x - ankle x = 0.5 - 0.5 = 0)
+    assert "balance_offset_norm" in metrics
+    assert not np.isnan(metrics["balance_offset_norm"])
+    # Normalized by shoulder width (0.4), so 0 / 0.4 = 0
+    assert np.isclose(metrics["balance_offset_norm"], 0.0, atol=0.1)
 
     # Elbow angle should be close to 180° (straight arm)
     assert "lead_elbow_angle_deg" in metrics
@@ -332,4 +364,195 @@ def test_compute_metrics_missing_address():
     # Impact should still work (doesn't need address)
     assert "impact" in result
     assert not all(np.isnan(v) for v in result["impact"].values())
+
+
+def test_compute_impact_metrics_left_handed():
+    """Test impact metrics for left-handed golfer (uses right arm)."""
+    keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+
+    # Create hips and shoulders (symmetric, same for both)
+    keypoints[0, 0, 11, :] = [0.768, 0.4, 0.9]  # left hip
+    keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
+    keypoints[0, 0, 5, :] = [0.427, 0.45, 0.9]  # left shoulder
+    keypoints[0, 0, 6, :] = [0.4, 0.55, 0.9]  # right shoulder
+
+    # For left-handed: lead arm is RIGHT arm (R_ELBOW -> R_WRIST)
+    # Lead forearm (right arm) - vertical (going up in image, decreasing y)
+    keypoints[0, 0, 8, :] = [0.5, 0.5, 0.9]  # right elbow (y, x, score)
+    keypoints[0, 0, 10, :] = [0.4, 0.5, 0.9]  # right wrist (vertical, going up)
+
+    # Test with left-handed parameter
+    metrics = compute_impact_metrics(keypoints, handedness="left")
+
+    assert "hip_open_deg" in metrics
+    assert not np.isnan(metrics["hip_open_deg"])
+
+    assert "shoulder_open_deg" in metrics
+    assert not np.isnan(metrics["shoulder_open_deg"])
+
+    assert "forward_lean_deg" in metrics
+    assert not np.isnan(metrics["forward_lean_deg"])
+    # Should be close to 0° (vertical) for left-handed using right arm
+    assert metrics["forward_lean_deg"] <= 5.0
+
+    # Compare with right-handed (should use left arm)
+    keypoints[0, 0, 7, :] = [0.5, 0.5, 0.9]  # left elbow
+    keypoints[0, 0, 9, :] = [0.4, 0.5, 0.9]  # left wrist
+    metrics_right = compute_impact_metrics(keypoints, handedness="right")
+    
+    # Both should have similar forward_lean_deg since both arms are vertical
+    assert abs(metrics["forward_lean_deg"] - metrics_right["forward_lean_deg"]) < 1.0
+
+
+def test_compute_finish_metrics_left_handed():
+    """Test finish metrics for left-handed golfer (uses right arm and ankle)."""
+    address_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    address_keypoints[0, 0, 5, :] = [0.4, 0.3, 0.9]  # left shoulder
+    address_keypoints[0, 0, 6, :] = [0.4, 0.7, 0.9]  # right shoulder
+
+    finish_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+
+    # For left-handed: lead arm is RIGHT arm
+    # Straight lead arm: right shoulder, right elbow, right wrist in line
+    finish_keypoints[0, 0, 6, :] = [0.3, 0.5, 0.9]  # right shoulder
+    finish_keypoints[0, 0, 8, :] = [0.4, 0.5, 0.9]  # right elbow (straight line)
+    finish_keypoints[0, 0, 10, :] = [0.5, 0.5, 0.9]  # right wrist (straight line)
+
+    finish_keypoints[0, 0, 5, :] = [0.3, 0.4, 0.9]  # left shoulder
+    # Hip center directly over lead ankle (right ankle for left-handed): both at x=0.5
+    finish_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
+    finish_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
+    # Hip center is at x = (0.4 + 0.6) / 2 = 0.5
+    finish_keypoints[0, 0, 16, :] = [0.7, 0.5, 0.9]  # right ankle (same x as hip center)
+
+    metrics = compute_finish_metrics(finish_keypoints, address_keypoints, handedness="left")
+
+    # Balance offset should be ~0 (hip center x - right ankle x = 0.5 - 0.5 = 0)
+    assert "balance_offset_norm" in metrics
+    assert not np.isnan(metrics["balance_offset_norm"])
+    # Normalized by shoulder width (0.4), so 0 / 0.4 = 0
+    assert np.isclose(metrics["balance_offset_norm"], 0.0, atol=0.1)
+
+    # Elbow angle should be close to 180° (straight arm)
+    assert "lead_elbow_angle_deg" in metrics
+    assert not np.isnan(metrics["lead_elbow_angle_deg"])
+    assert metrics["lead_elbow_angle_deg"] >= 170.0
+
+
+def test_compute_metrics_left_handed():
+    """Test full metrics computation for left-handed golfer."""
+    # Create keypoints for all positions
+    address_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    address_keypoints[0, 0, 0, :] = [0.3, 0.5, 0.9]  # nose
+    address_keypoints[0, 0, 5, :] = [0.4, 0.4, 0.9]  # left shoulder
+    address_keypoints[0, 0, 6, :] = [0.4, 0.6, 0.9]  # right shoulder
+    address_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
+    address_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
+
+    top_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    top_keypoints[0, 0, 5, :] = [0.4, 0.4, 0.9]  # left shoulder
+    top_keypoints[0, 0, 6, :] = [0.4, 0.6, 0.9]  # right shoulder
+    top_keypoints[0, 0, 11, :] = [0.6, 0.415, 0.9]  # left hip
+    top_keypoints[0, 0, 12, :] = [0.6, 0.585, 0.9]  # right hip
+
+    impact_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    impact_keypoints[0, 0, 5, :] = [0.427, 0.45, 0.9]  # left shoulder
+    impact_keypoints[0, 0, 6, :] = [0.4, 0.55, 0.9]  # right shoulder
+    impact_keypoints[0, 0, 11, :] = [0.768, 0.4, 0.9]  # left hip
+    impact_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
+    # For left-handed: lead arm is RIGHT arm
+    impact_keypoints[0, 0, 8, :] = [0.5, 0.5, 0.9]  # right elbow
+    impact_keypoints[0, 0, 10, :] = [0.4, 0.5, 0.9]  # right wrist
+
+    finish_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    finish_keypoints[0, 0, 5, :] = [0.3, 0.4, 0.9]  # left shoulder
+    finish_keypoints[0, 0, 6, :] = [0.3, 0.6, 0.9]  # right shoulder
+    finish_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
+    finish_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
+    # For left-handed: lead arm and ankle are RIGHT side
+    finish_keypoints[0, 0, 6, :] = [0.3, 0.5, 0.9]  # right shoulder
+    finish_keypoints[0, 0, 8, :] = [0.4, 0.5, 0.9]  # right elbow
+    finish_keypoints[0, 0, 10, :] = [0.5, 0.5, 0.9]  # right wrist
+    finish_keypoints[0, 0, 16, :] = [0.7, 0.5, 0.9]  # right ankle
+
+    swing_dict = {
+        "address": address_keypoints,
+        "top": top_keypoints,
+        "impact": impact_keypoints,
+        "finish": finish_keypoints,
+    }
+
+    # Test with left-handed parameter
+    result = compute_metrics(swing_dict, handedness="left")
+
+    # Check that all positions are present
+    assert "address" in result
+    assert "top" in result
+    assert "impact" in result
+    assert "finish" in result
+
+    # Check that metrics are computed (not all NaN)
+    assert not all(np.isnan(v) for v in result["address"].values())
+    assert not all(np.isnan(v) for v in result["top"].values())
+    assert not all(np.isnan(v) for v in result["impact"].values())
+    assert not all(np.isnan(v) for v in result["finish"].values())
+
+    # Verify left-handed specific metrics use right arm/ankle
+    # Forward lean should be computed from right arm
+    assert "forward_lean_deg" in result["impact"]
+    assert not np.isnan(result["impact"]["forward_lean_deg"])
+
+    # Balance offset should use right ankle
+    assert "balance_offset_norm" in result["finish"]
+    assert not np.isnan(result["finish"]["balance_offset_norm"])
+
+    # Lead elbow angle should use right arm
+    assert "lead_elbow_angle_deg" in result["finish"]
+    assert not np.isnan(result["finish"]["lead_elbow_angle_deg"])
+
+
+def test_compute_metrics_handedness_comparison():
+    """Test that metrics differ appropriately between right and left-handed golfers."""
+    # Create keypoints where left and right arms are in different positions
+    address_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    address_keypoints[0, 0, 5, :] = [0.4, 0.3, 0.9]  # left shoulder
+    address_keypoints[0, 0, 6, :] = [0.4, 0.7, 0.9]  # right shoulder
+
+    impact_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    # Left arm at 45° angle
+    impact_keypoints[0, 0, 7, :] = [0.5, 0.4, 0.9]  # left elbow
+    impact_keypoints[0, 0, 9, :] = [0.45, 0.35, 0.9]  # left wrist (at angle)
+    # Right arm vertical
+    impact_keypoints[0, 0, 8, :] = [0.5, 0.6, 0.9]  # right elbow
+    impact_keypoints[0, 0, 10, :] = [0.4, 0.6, 0.9]  # right wrist (vertical)
+
+    finish_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+    finish_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
+    finish_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
+    # Left ankle at x=0.3, right ankle at x=0.7
+    finish_keypoints[0, 0, 15, :] = [0.7, 0.3, 0.9]  # left ankle
+    finish_keypoints[0, 0, 16, :] = [0.7, 0.7, 0.9]  # right ankle
+
+    swing_dict = {
+        "address": address_keypoints,
+        "impact": impact_keypoints,
+        "finish": finish_keypoints,
+    }
+
+    # Test right-handed (uses left arm/ankle)
+    result_right = compute_metrics(swing_dict, handedness="right")
+    
+    # Test left-handed (uses right arm/ankle)
+    result_left = compute_metrics(swing_dict, handedness="left")
+
+    # Forward lean should differ (left arm at 45° vs right arm vertical)
+    assert result_right["impact"]["forward_lean_deg"] > 10.0  # Left arm at angle
+    assert result_left["impact"]["forward_lean_deg"] < 5.0  # Right arm vertical
+
+    # Balance offset should differ (different ankles)
+    # Hip center at x=0.5, left ankle at x=0.3, right ankle at x=0.7
+    # Right-handed: (0.5 - 0.3) / 0.4 = 0.5
+    # Left-handed: (0.5 - 0.7) / 0.4 = -0.5
+    assert result_right["finish"]["balance_offset_norm"] > 0
+    assert result_left["finish"]["balance_offset_norm"] < 0
 

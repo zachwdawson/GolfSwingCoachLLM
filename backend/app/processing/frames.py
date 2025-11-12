@@ -256,7 +256,7 @@ def extract_frames(video_id: UUID, db: Session) -> bool:
                                     }
                                     frame_obj.swing_metrics = json.dumps(metrics_dict)
                                     logger.info(
-                                        f"Stored metrics for {position_name}: {list(metrics_dict.keys())}"
+                                        f"Stored metrics for {position_name}: {metrics_dict}"
                                     )
                         except Exception as e:
                             logger.error(
