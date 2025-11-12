@@ -114,39 +114,48 @@ def test_compute_address_metrics_synthetic_square():
 
 
 def test_compute_top_metrics_foreshortening():
-    """Test top metrics with foreshortening (shoulder width halved)."""
-    # Address position: full shoulder width = 0.4 (from x=0.3 to x=0.7)
+    """Test top metrics with rotation (shoulders and hips rotated)."""
+    # Address position: shoulders horizontal, full width = 0.4 (from x=0.3 to x=0.7)
     address_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
-    address_keypoints[0, 0, 5, :] = [0.4, 0.3, 0.9]  # left shoulder
+    address_keypoints[0, 0, 5, :] = [0.4, 0.3, 0.9]  # left shoulder (y, x, score)
     address_keypoints[0, 0, 6, :] = [0.4, 0.7, 0.9]  # right shoulder
     # Hip width at address = 0.2 (from x=0.4 to x=0.6)
     address_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
     address_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
 
-    # Top position: shoulder width halved = 0.2 (from x=0.4 to x=0.6)
-    # This gives ratio = 0.2/0.4 = 0.5, so arccos(0.5) ≈ 60°
+    # Top position: shoulders rotated ~60° counterclockwise
+    # For 60° rotation: cos(60°) = 0.5, sin(60°) ≈ 0.866
+    # Original vector: (0.4, 0.0) -> rotated: (0.4*0.5, 0.4*0.866) = (0.2, 0.346)
+    # Center at (0.5, 0.4), so:
+    # Left shoulder: (0.5, 0.4) - (0.1, 0.173) = (0.4, 0.227)
+    # Right shoulder: (0.5, 0.4) + (0.1, 0.173) = (0.6, 0.573)
     top_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
-    top_keypoints[0, 0, 5, :] = [0.4, 0.4, 0.9]  # left shoulder (moved toward center)
-    top_keypoints[0, 0, 6, :] = [0.4, 0.6, 0.9]  # right shoulder (moved toward center)
-    # Hip width at top = 0.85 * 0.2 = 0.17 (from x=0.415 to x=0.585)
-    # This gives ratio = 0.17/0.2 = 0.85, so arccos(0.85) ≈ 31.8°
-    top_keypoints[0, 0, 11, :] = [0.6, 0.415, 0.9]  # left hip
-    top_keypoints[0, 0, 12, :] = [0.6, 0.585, 0.9]  # right hip
+    top_keypoints[0, 0, 5, :] = [0.227, 0.4, 0.9]  # left shoulder (rotated)
+    top_keypoints[0, 0, 6, :] = [0.573, 0.6, 0.9]  # right shoulder (rotated)
+    
+    # Pelvis rotated ~32° counterclockwise
+    # For 32° rotation: cos(32°) ≈ 0.848, sin(32°) ≈ 0.530
+    # Original vector: (0.2, 0.0) -> rotated: (0.2*0.848, 0.2*0.530) = (0.170, 0.106)
+    # Center at (0.5, 0.6), so:
+    # Left hip: (0.5, 0.6) - (0.085, 0.053) = (0.415, 0.547)
+    # Right hip: (0.5, 0.6) + (0.085, 0.053) = (0.585, 0.653)
+    top_keypoints[0, 0, 11, :] = [0.547, 0.415, 0.9]  # left hip (rotated)
+    top_keypoints[0, 0, 12, :] = [0.653, 0.585, 0.9]  # right hip (rotated)
 
     metrics = compute_top_metrics(top_keypoints, address_keypoints)
 
-    # Shoulder turn should be ~60° (arccos(0.5) ≈ 60°)
+    # Shoulder turn should be ~60°
     assert "shoulder_turn_deg" in metrics
     assert not np.isnan(metrics["shoulder_turn_deg"])
-    # Should be approximately 60 degrees
+    # Should be approximately 60 degrees (allow some tolerance for floating point)
     assert 55.0 <= metrics["shoulder_turn_deg"] <= 65.0
 
-    # Pelvis turn should be ~31.8° (arccos(0.85) ≈ 31.8°)
+    # Pelvis turn should be ~32°
     assert "pelvis_turn_deg" in metrics
     assert not np.isnan(metrics["pelvis_turn_deg"])
     assert 28.0 <= metrics["pelvis_turn_deg"] <= 35.0
 
-    # X-factor should be computed: ~60° - ~31.8° ≈ 28-30°
+    # X-factor should be computed: ~60° - ~32° ≈ 28-30°
     assert "x_factor_deg" in metrics
     assert not np.isnan(metrics["x_factor_deg"])
     assert 25.0 <= metrics["x_factor_deg"] <= 35.0

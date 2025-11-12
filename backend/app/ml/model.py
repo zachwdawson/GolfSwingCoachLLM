@@ -119,6 +119,12 @@ def load_model(checkpoint_path: str, device: str, num_classes: int = 9) -> GolfD
                             return GolfDBFrameClassifier
                         return super().find_class(module, name)
                 
+                @staticmethod
+                def load(file):
+                    """Load (unpickle) an object from a file-like object."""
+                    unpickler = CustomPickleModule.Unpickler(file)
+                    return unpickler.load()
+                
                 Unpickler = Unpickler
                 Pickler = pickle.Pickler
                 loads = pickle.loads
