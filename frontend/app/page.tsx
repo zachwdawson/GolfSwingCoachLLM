@@ -29,7 +29,7 @@ export default function Home() {
         <h2 style={{ fontSize: "1.5rem", marginBottom: "1rem" }}>Features</h2>
         <ul style={{ listStyle: "none", padding: 0 }}>
           <li style={{ padding: "0.5rem 0", fontSize: "1.1rem" }}>
-            ✓ Automatic key frame extraction (Address, Top, Impact, Finish)
+            ✓ Automatic key frame extraction (Address, Top, Mid-downswing, Impact, Finish)
           </li>
           <li style={{ padding: "0.5rem 0", fontSize: "1.1rem" }}>
             ✓ Pose estimation with keypoint annotations

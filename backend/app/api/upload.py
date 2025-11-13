@@ -183,9 +183,9 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
             detail=f"Video {video_id} not found",
         )
 
-    # Get frames - filter to only return the 4 key positions (Address, Top, Impact, Finish)
-    # Event classes: 0=Address, 3=Top, 5=Impact, 7=Finish
-    key_event_classes = [0, 3, 5, 7]
+    # Get frames - filter to only return the 5 key positions (Address, Top, Mid-downswing, Impact, Finish)
+    # Event classes: 0=Address, 3=Top, 4=Mid-downswing, 5=Impact, 7=Finish
+    key_event_classes = [0, 3, 4, 5, 7]
     all_frames = (
         db.query(Frame)
         .filter(Frame.video_id == video_id)
@@ -259,9 +259,9 @@ async def get_metrics(video_id: uuid.UUID, db: Session = Depends(get_db)):
             detail=f"Video {video_id} not found",
         )
 
-    # Get frames for the 4 key positions (Address, Top, Impact, Finish)
-    key_event_classes = [0, 3, 5, 7]
-    position_map = {0: "address", 3: "top", 5: "impact", 7: "finish"}
+    # Get frames for the 5 key positions (Address, Top, Mid-downswing, Impact, Finish)
+    key_event_classes = [0, 3, 4, 5, 7]
+    position_map = {0: "address", 3: "top", 4: "mid_ds", 5: "impact", 7: "finish"}
     
     frames = (
         db.query(Frame)

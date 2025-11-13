@@ -87,9 +87,9 @@ export default function ResultsPage() {
       }
 
       const data = await response.json();
-      // Sort frames by event_class to ensure correct order: Address (0), Top (3), Impact (5), Finish (7)
+      // Sort frames by event_class to ensure correct order: Address (0), Top (3), Mid-downswing (4), Impact (5), Finish (7)
       const sortedFrames = (data.frames || []).sort((a: Frame, b: Frame) => {
-        const eventClassOrder = [0, 3, 5, 7]; // Address, Top, Impact, Finish
+        const eventClassOrder = [0, 3, 4, 5, 7]; // Address, Top, Mid-downswing, Impact, Finish
         const aIndex = a.event_class !== null ? eventClassOrder.indexOf(a.event_class) : 999;
         const bIndex = b.event_class !== null ? eventClassOrder.indexOf(b.event_class) : 999;
         return aIndex - bIndex;
@@ -120,19 +120,24 @@ export default function ResultsPage() {
   const formatMetrics = (): string => {
     if (frames.length === 0) return "No metrics available";
 
-    const positionOrder = ["Address", "Top", "Impact", "Finish"];
-    const positionMap: Record<string, string> = {
-      Address: "address",
-      Top: "top",
-      Impact: "impact",
-      Finish: "finish",
+    // Map event labels to display names and position keys
+    const eventLabelMap: Record<string, { displayName: string; positionKey: string }> = {
+      "Address": { displayName: "Address", positionKey: "address" },
+      "Top": { displayName: "Top", positionKey: "top" },
+      "Mid-downswing (arm parallel)": { displayName: "Mid-downswing", positionKey: "mid_ds" },
+      "Impact": { displayName: "Impact", positionKey: "impact" },
+      "Finish": { displayName: "Finish", positionKey: "finish" },
     };
 
+    // Order for display
+    const positionOrder = ["Address", "Top", "Mid-downswing (arm parallel)", "Impact", "Finish"];
+
     let output = "";
-    for (const position of positionOrder) {
-      const frame = frames.find((f) => f.event_label === position);
+    for (const eventLabel of positionOrder) {
+      const frame = frames.find((f) => f.event_label === eventLabel);
       if (frame && frame.swing_metrics) {
-        output += `${position}:\n`;
+        const { displayName } = eventLabelMap[eventLabel] || { displayName: eventLabel };
+        output += `${displayName}:\n`;
         const metrics = frame.swing_metrics;
         for (const [key, value] of Object.entries(metrics)) {
           if (value !== null && value !== undefined) {

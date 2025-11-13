@@ -256,9 +256,10 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                         f"({width}x{height})"
                     )
 
-                    # Store keypoints for metrics computation (only for the 4 key positions)
-                    if event_class in [0, 3, 5, 7]:  # address, top, impact, finish
-                        position_map = {0: "address", 3: "top", 5: "impact", 7: "finish"}
+                    # Store keypoints for metrics computation (only for the 5 key positions)
+                    # Event classes: 0=Address, 3=Top, 4=Mid-downswing, 5=Impact, 7=Finish
+                    if event_class in [0, 3, 4, 5, 7]:  # address, top, mid_ds, impact, finish
+                        position_map = {0: "address", 3: "top", 4: "mid_ds", 5: "impact", 7: "finish"}
                         position_name = position_map[event_class]
                         if keypoints_json is not None:
                             # Convert JSON back to numpy array for metrics computation
@@ -268,8 +269,8 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
 
                     frame_index += 1
 
-                # Compute swing metrics if we have all four key positions
-                if len(swing_keypoints) == 4:
+                # Compute swing metrics if we have all five key positions
+                if len(swing_keypoints) == 5:
                     try:
                         logger.info("Computing swing metrics")
                         metrics_result = compute_metrics(swing_keypoints)

@@ -167,7 +167,7 @@ def draw_pose_overlay(
     pts = np.stack([w * kpts[:, 1], h * kpts[:, 0]], axis=-1).astype(np.int32)
     conf = kpts[:, 2]
 
-    # Draw skeleton lines (cyan)
+    # Draw skeleton lines (cyan) - much smaller
     for p, q in SKELETON:
         if conf[p] > keypoint_threshold and conf[q] > keypoint_threshold:
             cv2.line(
@@ -175,17 +175,17 @@ def draw_pose_overlay(
                 tuple(pts[p]),
                 tuple(pts[q]),
                 (0, 255, 255),  # Cyan color (BGR format)
-                2,
+                1,  # Reduced from 2 to 1
                 lineType=cv2.LINE_AA,
             )
 
-    # Draw keypoint circles (magenta with white border) - smaller size
+    # Draw keypoint circles (magenta with white border) - much smaller
     for i, (x, y) in enumerate(pts):
         if conf[i] > keypoint_threshold:
-            # Draw filled circle (magenta) - reduced from radius 3 to 2
-            cv2.circle(out, (x, y), 2, (255, 20, 147), -1, lineType=cv2.LINE_AA)
-            # Draw border circle (white) - reduced from radius 5 to 3
-            cv2.circle(out, (x, y), 3, (255, 255, 255), 1, lineType=cv2.LINE_AA)
+            # Draw filled circle (magenta) - much smaller
+            cv2.circle(out, (x, y), 1, (255, 20, 147), -1, lineType=cv2.LINE_AA)
+            # Draw border circle (white) - much smaller
+            cv2.circle(out, (x, y), 2, (255, 255, 255), 1, lineType=cv2.LINE_AA)
 
     return out
 

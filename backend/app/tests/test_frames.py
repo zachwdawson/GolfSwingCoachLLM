@@ -110,9 +110,9 @@ def test_get_frames_success(client, mock_s3_client, test_db):
     db = TestSessionLocal()
     db.add(video)
     
-    # Create test frames with event_class values (Address, Top, Impact, Finish)
-    event_classes = [0, 3, 5, 7]
-    event_labels = ["Address", "Top", "Impact", "Finish"]
+    # Create test frames with event_class values (Address, Top, Mid-downswing, Impact, Finish)
+    event_classes = [0, 3, 4, 5, 7]
+    event_labels = ["Address", "Top", "Mid-downswing (arm parallel)", "Impact", "Finish"]
     for i, (event_class, event_label) in enumerate(zip(event_classes[:3], event_labels[:3])):
         frame = Frame(
             video_id=video_id,
@@ -132,7 +132,7 @@ def test_get_frames_success(client, mock_s3_client, test_db):
     assert response.status_code == 200
     data = response.json()
     assert data["video_id"] == str(video_id)
-    assert len(data["frames"]) == 3  # Should return 3 frames (Address, Top, Impact)
+    assert len(data["frames"]) == 3  # Should return 3 frames (Address, Top, Mid-downswing)
     assert all("url" in frame for frame in data["frames"])
     assert all(frame["width"] == 1920 for frame in data["frames"])
     assert all(frame["height"] == 1080 for frame in data["frames"])
