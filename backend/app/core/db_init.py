@@ -102,10 +102,10 @@ INSERT INTO swing_patterns (
   :level,
   :contact,
   :ball_shape,
-  :metric_expectations::jsonb,
-  :cues::jsonb,
-  :drills::jsonb,
-  :metrics_vector::vector
+  CAST(:metric_expectations AS JSONB),
+  CAST(:cues AS JSONB),
+  CAST(:drills AS JSONB),
+  CAST(:metrics_vector AS vector)
 )
 ON CONFLICT (id) DO NOTHING
 """.strip())

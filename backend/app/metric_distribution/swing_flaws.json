@@ -1,0 +1,331 @@
+[
+    {
+      "id": "early-extension",
+      "title": "Early Extension",
+      "level": "any",
+      "contact": "inconsistent",
+      "ball-shape": "hook",
+      "metrics": [
+        ["mid-ds", "hip_open_deg_p6", "< 10°"],
+        ["finish", "balance_offset_norm", "< 0.10"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "normal",
+        "top_pelvis_turn_deg": "normal",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "low",
+        "finish_balance_over_lead_foot_norm": "normal"
+      },
+      "cues": ["Keep glutes on a chair", "Turn through, don’t thrust"],
+      "drills": [
+        {
+          "drill explanation": "Chair/Wall butt drill to keep hip depth",
+          "drill video": "https://www.youtube.com/watch?v=xzvtN-0dRI4"
+        },
+        {
+          "drill explanation": "Simple chair cue to reduce early extension",
+          "drill video": "https://www.youtube.com/watch?v=RCJB3YRX4Rg"
+        }
+      ]
+    },
+    {
+      "id": "over-the-top",
+      "title": "Over-the-Top Path",
+      "level": "any",
+      "contact": "inconsistent",
+      "ball-shape": "slice",
+      "metrics": [
+        ["mid-ds", "trail_elbow_flex_deg_p6", "< 45°"],
+        ["mid-ds", "hip_open_deg_p6", "< 10°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "high",
+        "top_shoulder_turn_deg": "normal",
+        "top_pelvis_turn_deg": "low",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "low",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "low",
+        "finish_balance_over_lead_foot_norm": "normal"
+      },
+      "cues": ["Trail elbow down and in", "Side-arm throw from the trail pocket"],
+      "drills": [
+        {
+          "drill explanation": "Pump to P6 to shallow and sequence",
+          "drill video": "https://www.youtube.com/watch?v=oxYQWS-No44"
+        },
+        {
+          "drill explanation": "Split-hand swings to improve face/path and sequencing",
+          "drill video": "https://www.youtube.com/watch?v=mEsqkojsFJs"
+        }
+      ]
+    },
+    {
+      "id": "insufficient-shoulder-turn",
+      "title": "Insufficient Shoulder Turn",
+      "level": "any",
+      "contact": "inconsistent",
+      "ball-shape": "normal",
+      "metrics": [
+        ["top", "shoulder_turn_deg", "< 60–65°"],
+        ["top", "x_factor_deg", "< 10°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "low",
+        "top_pelvis_turn_deg": "normal",
+        "mid_ds_hip_open_deg": "normal",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "normal",
+        "impact_forward_shaft_lean_deg": "normal",
+        "finish_balance_over_lead_foot_norm": "normal"
+      },
+      "cues": ["Turn chest to trail heel", "Zip up trail pocket with ribcage"],
+      "drills": [
+        {
+          "drill explanation": "Indoor shoulder/hip rotation series",
+          "drill video": "https://www.youtube.com/watch?v=x-rkDoLECR4"
+        },
+        {
+          "drill explanation": "Club-across-shoulders rotation drill",
+          "drill video": "https://www.youtube.com/watch?v=b1XrkXmVX1U"
+        }
+      ]
+    },
+    {
+      "id": "sway-slide",
+      "title": "Sway / Slide",
+      "level": "any",
+      "contact": "thin",
+      "ball-shape": "normal",
+      "metrics": [
+        ["impact", "hip_open_deg", "< 20°"],
+        ["finish", "balance_offset_norm", "≤ 0.10"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "normal",
+        "top_pelvis_turn_deg": "low",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "normal",
+        "finish_balance_over_lead_foot_norm": "high"
+      },
+      "cues": ["Turn in a barrel", "Pressure shift without hip drift"],
+      "drills": [
+        {
+          "drill explanation": "Alignment-stick outside trail hip to stop slide",
+          "drill video": "https://www.youtube.com/watch?v=Og88U_tXQVE"
+        },
+        {
+          "drill explanation": "Wall behind trail hip to train depth and coil",
+          "drill video": "https://www.youtube.com/watch?v=ZGqBENy_ww4"
+        }
+      ]
+    },
+    {
+      "id": "closed-shoulders-impact",
+      "title": "Closed Shoulders at Impact",
+      "level": "any",
+      "contact": "inconsistent",
+      "ball-shape": "hook",
+      "metrics": [
+        ["impact", "shoulder_open_deg", "< 10°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "low",
+        "top_shoulder_turn_deg": "normal",
+        "top_pelvis_turn_deg": "normal",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "normal",
+        "finish_balance_over_lead_foot_norm": "normal"
+      },
+      "cues": ["Show your chest to the target by impact"],
+      "drills": [
+        {
+          "drill explanation": "Shoulder rotation into impact (open-chest feel)",
+          "drill video": "https://www.youtube.com/watch?v=tf0pLTgzyjE"
+        },
+        {
+          "drill explanation": "Impact bag reps to rehearse open torso strike",
+          "drill video": "https://www.youtube.com/watch?v=Yqig0b8dzWA"
+        }
+      ]
+    },
+    {
+      "id": "lack-of-shaft-lean",
+      "title": "Lack of Shaft Lean (Flip)",
+      "level": "any",
+      "contact": "fat",
+      "ball-shape": "normal",
+      "metrics": [
+        ["impact", "forward_lean_deg", "< 8°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "normal",
+        "top_pelvis_turn_deg": "normal",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "low",
+        "finish_balance_over_lead_foot_norm": "normal"
+      },
+      "cues": ["Lead wrist flat/bowed", "Hands slightly ahead at strike"],
+      "drills": [
+        {
+          "drill explanation": "Impact bag for forward shaft-lean and strike",
+          "drill video": "https://www.youtube.com/watch?v=Yqig0b8dzWA"
+        },
+        {
+          "drill explanation": "3 simple shaft-lean trainers",
+          "drill video": "https://www.youtube.com/watch?v=swlUIPqIhDY"
+        }
+      ]
+    },
+    {
+      "id": "hanging-back",
+      "title": "Hanging Back",
+      "level": "any",
+      "contact": "thin",
+      "ball-shape": "slice",
+      "metrics": [
+        ["finish", "balance_offset_norm", "< 0.10"],
+        ["impact", "hip_open_deg", "< 20°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "normal",
+        "top_pelvis_turn_deg": "normal",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "low",
+        "finish_balance_over_lead_foot_norm": "low"
+      },
+      "cues": ["Finish with belt buckle past lead foot", "Post up on lead side"],
+      "drills": [
+        {
+          "drill explanation": "Titleist step-through to sync pressure and rotation",
+          "drill video": "https://www.youtube.com/watch?v=D6zQpaZezhI"
+        },
+        {
+          "drill explanation": "Step-through timing of hip rotation",
+          "drill video": "https://www.youtube.com/watch?v=u382ZZHdmfw"
+        }
+      ]
+    },
+    {
+      "id": "trail-arm-stuck",
+      "title": "Trail Arm Stuck",
+      "level": "any",
+      "contact": "inconsistent",
+      "ball-shape": "hook",
+      "metrics": [
+        ["mid-ds", "trail_elbow_flex_deg_p6", "< 45°"],
+        ["impact", "shoulder_open_deg", "< 10°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "high",
+        "top_pelvis_turn_deg": "normal",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "low",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "low",
+        "finish_balance_over_lead_foot_norm": "normal"
+      },
+      "cues": ["Trail elbow brushes ribcage then extends", "Keep trail arm in front of ribcage"],
+      "drills": [
+        {
+          "drill explanation": "Headcover under trail arm to improve connection",
+          "drill video": "https://www.youtube.com/watch?v=ufl3-R6zOvs"
+        },
+        {
+          "drill explanation": "Trail-arm move tutorial (downswing structure)",
+          "drill video": "https://www.youtube.com/watch?v=tSUcKFHHfBk"
+        }
+      ]
+    },
+    {
+      "id": "under-rotation-top",
+      "title": "Under-rotation at the Top",
+      "level": "any",
+      "contact": "inconsistent",
+      "ball-shape": "normal",
+      "metrics": [
+        ["top", "pelvis_turn_deg", "< 20°"],
+        ["top", "shoulder_turn_deg", "< 65°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "low",
+        "top_pelvis_turn_deg": "low",
+        "mid_ds_hip_open_deg": "low",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "low",
+        "impact_forward_shaft_lean_deg": "normal",
+        "finish_balance_over_lead_foot_norm": "normal"
+      },
+      "cues": ["Turn zipper to camera", "Complete turn then transition"],
+      "drills": [
+        {
+          "drill explanation": "Slow-motion to full turn (indoor rotation series)",
+          "drill video": "https://www.youtube.com/watch?v=x-rkDoLECR4"
+        },
+        {
+          "drill explanation": "Club-across-shoulders turn rehearsal",
+          "drill video": "https://www.youtube.com/watch?v=b1XrkXmVX1U"
+        }
+      ]
+    },
+    {
+      "id": "over-rotation-pelvis",
+      "title": "Over-rotation of Pelvis (loss of coil)",
+      "level": "any",
+      "contact": "inconsistent",
+      "ball-shape": "normal",
+      "metrics": [
+        ["top", "pelvis_turn_deg", "> 50°"],
+        ["top", "shoulder_turn_deg", "< 75°"]
+      ],
+      "metric_expectations": {
+        "address_spine_forward_bend_deg": "normal",
+        "address_shoulder_alignment_deg": "normal",
+        "top_shoulder_turn_deg": "low",
+        "top_pelvis_turn_deg": "high",
+        "mid_ds_hip_open_deg": "normal",
+        "mid_ds_trail_elbow_flexion_deg": "normal",
+        "impact_hip_open_deg": "high",
+        "impact_forward_shaft_lean_deg": "normal",
+        "finish_balance_over_lead_foot_norm": "high"
+      },
+      "cues": ["Keep trail hip inside a wall", "Coil around stable pelvis"],
+      "drills": [
+        {
+          "drill explanation": "Wall behind trail hip (depth/coil control)",
+          "drill video": "https://www.youtube.com/watch?v=ZGqBENy_ww4"
+        },
+        {
+          "drill explanation": "Alignment-stick depth control",
+          "drill video": "https://www.youtube.com/watch?v=EnXwa9n-szk"
+        }
+      ]
+    }
+  ]
+  

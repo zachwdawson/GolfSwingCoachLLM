@@ -203,7 +203,7 @@ def main():
             # pgvector literal: '[v1, v2, ...]' - format as string for PostgreSQL
             vec_literal = "[" + ",".join(f"{v:.3f}" for v in vec) + "]"
 
-            # Use parameterized query for safety, but cast vector literal directly
+            # Use parameterized query for safety, with proper CAST syntax
             sql = text("""
 INSERT INTO swing_patterns (
   id, title, level, contact, ball_shape,
@@ -214,10 +214,10 @@ INSERT INTO swing_patterns (
   :level,
   :contact,
   :ball_shape,
-  :metric_expectations::jsonb,
-  :cues::jsonb,
-  :drills::jsonb,
-  :metrics_vector::vector
+  CAST(:metric_expectations AS JSONB),
+  CAST(:cues AS JSONB),
+  CAST(:drills AS JSONB),
+  CAST(:metrics_vector AS vector)
 )
 ON CONFLICT (id) DO NOTHING
 """.strip())
