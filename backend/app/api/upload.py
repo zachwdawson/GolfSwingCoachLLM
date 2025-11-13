@@ -121,6 +121,21 @@ async def upload_video(file: UploadFile = File(...), db: Session = Depends(get_d
                 detail="Failed to save video record",
             )
 
+        # Upload video to S3 immediately as fallback
+        try:
+            logger.info(f"Uploading video to S3: {s3_key}")
+            with open(temp_file_path, "rb") as video_file:
+                content_type = "video/mp4"  # default
+                if file_extension.lower() in ["mov"]:
+                    content_type = "video/quicktime"
+                success = s3_client.upload_file(video_file, s3_key, content_type)
+                if success:
+                    logger.info(f"Successfully uploaded video to S3: {s3_key}")
+                else:
+                    logger.warning(f"Failed to upload video to S3: {s3_key}, but temp file is available")
+        except Exception as e:
+            logger.warning(f"Error uploading video to S3: {e}, but temp file is available", exc_info=True)
+
         # Enqueue frame extraction with temp file path
         enqueue_frame_extraction(video_id, temp_file_path=temp_file_path)
         logger.info(f"Enqueued video for frame extraction: {video_id} with temp file: {temp_file_path}")

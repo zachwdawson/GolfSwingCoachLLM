@@ -60,14 +60,34 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
 
         # Determine video file path: use temp_file_path if provided, otherwise download from S3
         if temp_file_path:
-            # Use provided temp file
+            logger.info(f"Validating temp file: {temp_file_path}")
+            
+            # Step 1: Check if file exists
             if not os.path.exists(temp_file_path):
-                logger.warning(f"Temp file not found: {temp_file_path}, falling back to S3 download")
+                logger.warning(f"Temp file does not exist: {temp_file_path}, falling back to S3 download")
                 temp_file_path = None
             else:
-                temp_video_path = temp_file_path
-                temp_file_owned = False  # Don't delete the file, it's managed by upload endpoint
-                logger.info(f"Using temp file for processing: {temp_video_path}")
+                # Step 2: Check file size
+                try:
+                    file_size = os.path.getsize(temp_file_path)
+                    if file_size == 0:
+                        logger.warning(f"Temp file is empty (0 bytes): {temp_file_path}, falling back to S3 download")
+                        temp_file_path = None
+                    else:
+                        # Step 3: Check file is readable
+                        try:
+                            with open(temp_file_path, "rb") as f:
+                                f.read(1)  # Try reading first byte
+                            # All validations passed
+                            temp_video_path = temp_file_path
+                            temp_file_owned = False  # Don't delete the file, it's managed by upload endpoint
+                            logger.info(f"Temp file validated successfully: {temp_file_path} (size: {file_size} bytes)")
+                        except (IOError, OSError) as e:
+                            logger.warning(f"Temp file is not readable: {temp_file_path}, error: {e}, falling back to S3 download")
+                            temp_file_path = None
+                except OSError as e:
+                    logger.warning(f"Failed to get temp file size: {temp_file_path}, error: {e}, falling back to S3 download")
+                    temp_file_path = None
         
         if not temp_video_path:
             # Fallback: Download video from S3 to temp file
