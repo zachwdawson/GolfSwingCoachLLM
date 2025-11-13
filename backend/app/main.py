@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.upload import router as upload_router
 from app.core.config import settings
+from app.core.db_init import initialize_database
 from app.processing.queue import start_worker
 
 # Configure logging
@@ -26,15 +27,26 @@ app.add_middleware(
 
 app.include_router(upload_router)
 
-# Create frames directory on startup
-os.makedirs(settings.frames_dir, exist_ok=True)
-logger.info(f"Frames directory created/verified: {settings.frames_dir}")
 
-# Start background worker for frame processing (skip during tests)
-# Note: Queue system is deprecated in favor of synchronous processing
-# Keeping for backward compatibility with manual processing endpoint
-if not os.environ.get("TESTING"):
-    start_worker()
+@app.on_event("startup")
+async def startup_event():
+    """Initialize application on startup."""
+    # Create frames directory
+    os.makedirs(settings.frames_dir, exist_ok=True)
+    logger.info(f"Frames directory created/verified: {settings.frames_dir}")
+    
+    # Initialize database (extensions, tables, swing patterns)
+    try:
+        initialize_database()
+    except Exception as e:
+        logger.error(f"Database initialization failed on startup: {e}", exc_info=True)
+        # Don't fail startup - app can still function without swing patterns
+    
+    # Start background worker for frame processing (skip during tests)
+    # Note: Queue system is deprecated in favor of synchronous processing
+    # Keeping for backward compatibility with manual processing endpoint
+    if not os.environ.get("TESTING"):
+        start_worker()
 
 
 @app.get("/health")
