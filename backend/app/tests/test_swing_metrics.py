@@ -197,7 +197,7 @@ def test_compute_top_metrics_ankle_referenced():
     top_keypoints[0, 0, 11, :] = [0.6 - 0.0707, 0.5 - 0.0707, 0.9]  # left hip
     top_keypoints[0, 0, 12, :] = [0.6 + 0.0707, 0.5 + 0.0707, 0.9]  # right hip
 
-    metrics = compute_top_metrics(top_keypoints, address_keypoints, handedness="right")
+    metrics = compute_top_metrics(top_keypoints, address_keypoints, DEFAULT_TARGET_VEC, handedness="right")
 
     # Shoulder turn should be ~90° (rotated from horizontal ankle line to vertical)
     assert "shoulder_turn_deg" in metrics
@@ -236,7 +236,7 @@ def test_compute_top_metrics_with_ankle_fallback():
     top_keypoints[0, 0, 12, :] = [0.6 + 0.05, 0.5 + 0.0866, 0.9]  # right hip
     # Note: top ankles are not provided - should use address ankles
 
-    metrics = compute_top_metrics(top_keypoints, address_keypoints, handedness="right")
+    metrics = compute_top_metrics(top_keypoints, address_keypoints, DEFAULT_TARGET_VEC, handedness="right")
 
     # Shoulder turn should be ~60°
     assert "shoulder_turn_deg" in metrics
@@ -310,6 +310,7 @@ def test_compute_finish_metrics_elbow_angle():
     finish_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
     # Hip center is at x = (0.4 + 0.6) / 2 = 0.5
     finish_keypoints[0, 0, 15, :] = [0.7, 0.5, 0.9]  # left ankle (same x as hip center)
+    finish_keypoints[0, 0, 16, :] = [0.7, 0.5, 0.9]  # right ankle (same x as hip center)
 
     metrics = compute_finish_metrics(
         finish_keypoints, address_keypoints, DEFAULT_TARGET_VEC
@@ -505,11 +506,12 @@ def test_compute_finish_metrics_left_handed():
     finish_keypoints[0, 0, 10, :] = [0.5, 0.5, 0.9]  # right wrist (straight line)
 
     finish_keypoints[0, 0, 5, :] = [0.3, 0.4, 0.9]  # left shoulder
-    # Hip center directly over lead ankle (right ankle for left-handed): both at x=0.5
+    # Hip center directly over ankle midpoint at x=0.5
     finish_keypoints[0, 0, 11, :] = [0.6, 0.4, 0.9]  # left hip
     finish_keypoints[0, 0, 12, :] = [0.6, 0.6, 0.9]  # right hip
     # Hip center is at x = (0.4 + 0.6) / 2 = 0.5
-    finish_keypoints[0, 0, 16, :] = [0.7, 0.5, 0.9]  # right ankle (same x as hip center)
+    finish_keypoints[0, 0, 15, :] = [0.7, 0.5, 0.9]  # left ankle
+    finish_keypoints[0, 0, 16, :] = [0.7, 0.5, 0.9]  # right ankle
 
     metrics = compute_finish_metrics(
         finish_keypoints, address_keypoints, DEFAULT_TARGET_VEC, handedness="left"
@@ -563,6 +565,7 @@ def test_compute_metrics_left_handed():
     finish_keypoints[0, 0, 6, :] = [0.3, 0.5, 0.9]  # right shoulder
     finish_keypoints[0, 0, 8, :] = [0.4, 0.5, 0.9]  # right elbow
     finish_keypoints[0, 0, 10, :] = [0.5, 0.5, 0.9]  # right wrist
+    finish_keypoints[0, 0, 15, :] = [0.7, 0.5, 0.9]  # left ankle
     finish_keypoints[0, 0, 16, :] = [0.7, 0.5, 0.9]  # right ankle
 
     swing_dict = {

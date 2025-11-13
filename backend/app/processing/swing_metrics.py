@@ -164,6 +164,28 @@ def acute_angle_deg(vec1: np.ndarray, vec2: np.ndarray) -> float:
         angle = 180.0 - angle
     return angle
 
+def angle_deg(vec1: np.ndarray, vec2: np.ndarray) -> float:
+    """
+    Compute angle between two vectors in degrees.
+
+    Args:
+        vec1: First vector (2D) in image coordinates
+        vec2: Second vector (2D) in image coordinates
+
+    Returns:
+        Acute angle in degrees
+    """
+    angle = abs(signed_angle_deg(vec1, vec2))
+    return angle
+
+def yaw_from_body_line(l_body, r_body, target_vec):
+    line = line_vec(r_body, l_body)  # trail -> lead
+    if line is None:
+        return np.nan
+    alpha = acute_angle_deg(line, target_vec)  # 0..90
+    return max(0.0, 90.0 - alpha)             # 0..90, 0 = square, larger = more open/closed
+
+
 
 def line_vec(p: np.ndarray, q: np.ndarray) -> Optional[np.ndarray]:
     """
@@ -222,8 +244,8 @@ def line_angle_to_ankles(
     Returns:
         Signed angle in degrees from ankle line to body line, or np.nan if invalid
     """
-    # Build vectors: ankle line (right→left) and body line (right→left)
-    ankle_vec = line_vec(r_ankle, l_ankle)  # right→left ankle (target baseline)
+    # Build vectors: ankle line (left→right) and body line (right→left)
+    ankle_vec = line_vec(l_ankle, r_ankle)  # left→right ankle (target baseline)
     body_vec = line_vec(r_body, l_body)    # right→left body
 
     if ankle_vec is None or body_vec is None:
@@ -331,14 +353,9 @@ def compute_target_vector(
         logger.debug("Address keypoints missing; using default target vector.")
         return DEFAULT_TARGET_VEC
 
-    if handedness == "left":
-        lead_idx, trail_idx = R_ANKLE, L_ANKLE
-    else:
-        lead_idx, trail_idx = L_ANKLE, R_ANKLE
-
-    lead_ankle = extract_keypoint(address_keypoints, lead_idx)
-    trail_ankle = extract_keypoint(address_keypoints, trail_idx)
-    target_vec = line_vec(trail_ankle, lead_ankle)
+    l_ankle_addr = extract_keypoint(address_keypoints, L_ANKLE)
+    r_ankle_addr = extract_keypoint(address_keypoints, R_ANKLE)
+    target_vec = line_vec(l_ankle_addr, r_ankle_addr)
 
     if target_vec is None:
         logger.debug(
@@ -353,13 +370,7 @@ def compute_target_vector(
         )
         return DEFAULT_TARGET_VEC
 
-    target_vec = target_vec / norm
-
-    # Ensure consistent orientation with default target direction.
-    if np.dot(target_vec, DEFAULT_TARGET_VEC) < 0:
-        target_vec = -target_vec
-
-    return target_vec
+    return target_vec / norm
 
 
 def compute_address_metrics(
@@ -423,8 +434,9 @@ def compute_address_metrics(
 def compute_top_metrics(
     keypoints: np.ndarray,
     address_keypoints: np.ndarray,
+    target_vec: np.ndarray,
     handedness: str = "right",
-    finish_keypoints: Optional[np.ndarray] = None,
+    finish_keypoints: Optional[np.ndarray] = None
 ) -> Dict[str, float]:
     """
     Compute metrics for top position (P4) using ankle-referenced rotation geometry.
@@ -490,13 +502,19 @@ def compute_top_metrics(
     # Compute signed rotation as wrapped difference
     if not np.isnan(theta_shoulder_addr) and not np.isnan(theta_shoulder_top):
         delta_theta_shoulder = wrap_angle_deg(theta_shoulder_top - theta_shoulder_addr)
-        metrics["shoulder_turn_deg"] = delta_theta_shoulder
+        # metrics["shoulder_turn_deg"] = delta_theta_shoulder
+        metrics["shoulder_turn_deg"] = angle_deg(line_vec(l_shoulder_top, r_shoulder_top), target_vec)
+        # metrics["shoulder_turn_deg"] = yaw_from_body_line(l_shoulder_top, r_shoulder_top, target_vec)
+
     else:
         metrics["shoulder_turn_deg"] = np.nan
 
     if not np.isnan(theta_hip_addr) and not np.isnan(theta_hip_top):
         delta_theta_hip = wrap_angle_deg(theta_hip_top - theta_hip_addr)
-        metrics["pelvis_turn_deg"] = delta_theta_hip
+        # metrics["pelvis_turn_deg"] = delta_theta_hip
+        # metrics["pelvis_turn_deg"] = angle_deg(line_vec(l_hip_top, r_hip_top), target_vec)
+        metrics["pelvis_turn_deg"] = yaw_from_body_line(l_hip_top, r_hip_top, target_vec)
+
     else:
         metrics["pelvis_turn_deg"] = np.nan
 
@@ -543,7 +561,9 @@ def compute_mid_downswing_metrics(
     if l_hip is not None and r_hip is not None:
         hip_line = line_vec(r_hip, l_hip)
         if hip_line is not None:
-            metrics["hip_open_deg"] = acute_angle_deg(hip_line, target_vec)
+            # metrics["hip_open_deg"] = acute_angle_deg(hip_line, target_vec)
+            yaw = yaw_from_body_line(l_hip, r_hip, target_vec)
+            metrics["hip_open_deg"] = yaw
         else:
             metrics["hip_open_deg"] = np.nan
     else:
@@ -554,7 +574,8 @@ def compute_mid_downswing_metrics(
         v1 = line_vec(trail_shoulder, trail_elbow)  # shoulder -> elbow
         v2 = line_vec(trail_wrist, trail_elbow)      # wrist -> elbow
         if v1 is not None and v2 is not None:
-            metrics["trail_elbow_flexion_deg"] = angle_deg(v1, v2)
+            # metrics["trail_elbow_flexion_deg"] = angle_deg(v1, v2)
+            metrics["trail_elbow_flexion_deg"] = 180.0 - angle_deg(v1, v2)
         else:
             metrics["trail_elbow_flexion_deg"] = np.nan
     else:
@@ -601,7 +622,9 @@ def compute_impact_metrics(
     if l_hip is not None and r_hip is not None:
         hip_line = line_vec(r_hip, l_hip)
         if hip_line is not None:
-            metrics["hip_open_deg"] = acute_angle_deg(hip_line, target_vec)
+            # metrics["hip_open_deg"] = acute_angle_deg(hip_line, target_vec)
+            yaw = yaw_from_body_line(l_hip, r_hip, target_vec)
+            metrics["hip_open_deg"] = yaw
         else:
             metrics["hip_open_deg"] = np.nan
     else:
@@ -652,39 +675,40 @@ def compute_finish_metrics(
     r_shoulder = extract_keypoint(keypoints, R_SHOULDER)
     l_hip = extract_keypoint(keypoints, L_HIP)
     r_hip = extract_keypoint(keypoints, R_HIP)
-    
-    # Get lead body parts based on handedness
-    if handedness == "left":
-        lead_ankle = extract_keypoint(keypoints, R_ANKLE)
-    else:  # right-handed (default)
-        lead_ankle = extract_keypoint(keypoints, L_ANKLE)
+    # Extract ankles for balance calculation
+    l_ankle = extract_keypoint(keypoints, L_ANKLE)
+    r_ankle = extract_keypoint(keypoints, R_ANKLE)
 
     # Balance over lead foot: hip_c = Mid(L_hip,R_hip), lead_ankle = L_ankle (RH golfer), sw0 = |R_shoulder−L_shoulder| at address.
     # Metric = (hip_c.x − lead_ankle.x)/sw0
-    if l_hip is not None and r_hip is not None and lead_ankle is not None:
+    if l_hip is not None and r_hip is not None and l_ankle is not None and r_ankle is not None and l_shoulder is not None and r_shoulder is not None:
+        shoulder_width = width(l_shoulder, r_shoulder)
+        if handedness == "right":
+            lead_ankle = l_ankle
+            trail_ankle = r_ankle
+        else:
+            lead_ankle = r_ankle
+            trail_ankle = l_ankle
+
+        mid_ankles = (l_ankle + r_ankle) / 2.0
         hip_c = (l_hip + r_hip) / 2.0
 
-        # Normalize by shoulder width from address
-        l_shoulder_addr = extract_keypoint(address_keypoints, L_SHOULDER)
-        r_shoulder_addr = extract_keypoint(address_keypoints, R_SHOULDER)
+        direction_to_lead = np.sign(lead_ankle[0] - trail_ankle[0])  # negative if lead is left of trail
 
-        if l_shoulder_addr is not None and r_shoulder_addr is not None:
-            sw0 = width(l_shoulder_addr, r_shoulder_addr)
-            if sw0 is not None and sw0 > 0:
-                metrics["balance_over_lead_foot_norm"] = (hip_c[0] - lead_ankle[0]) / sw0
-            else:
-                metrics["balance_over_lead_foot_norm"] = np.nan
-        else:
-            # Cannot normalize without address shoulder width
-            metrics["balance_over_lead_foot_norm"] = np.nan
+        delta = hip_c[0] - mid_ankles[0]
+        metrics["balance_over_lead_foot_norm"] = direction_to_lead * delta / shoulder_width
+
     else:
         metrics["balance_over_lead_foot_norm"] = np.nan
 
     # Shoulder finish angle: sh_line at finish; Angle(sh_line, target_vec)
     if l_shoulder is not None and r_shoulder is not None:
-        sh_line = line_vec(r_shoulder, l_shoulder)
+        sh_line = line_vec(l_shoulder, r_shoulder)
         if sh_line is not None:
-            metrics["shoulder_finish_deg"] = acute_angle_deg(sh_line, target_vec)
+            # metrics["shoulder_finish_deg"] = acute_angle_deg(sh_line, target_vec)
+            metrics["shoulder_finish_deg"] = angle_deg(sh_line, target_vec)
+            # metrics["shoulder_finish_deg"] = yaw_from_body_line(l_shoulder, r_shoulder, target_vec)
+
         else:
             metrics["shoulder_finish_deg"] = np.nan
     else:
@@ -730,7 +754,7 @@ def compute_metrics(
 
     if "top" in swing_dict and address_keypoints is not None:
         result["top"] = compute_top_metrics(
-            swing_dict["top"], address_keypoints, handedness, finish_keypoints
+            swing_dict["top"], address_keypoints, target_vec, handedness, finish_keypoints
         )
     elif "top" in swing_dict:
         result["top"] = {
