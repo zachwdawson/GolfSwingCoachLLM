@@ -251,10 +251,11 @@ export default function ResultsPage() {
                 >
                   <div
                     style={{
-                      position: "relative",
                       width: "100%",
-                      paddingTop: "75%", // 4:3 aspect ratio
                       backgroundColor: "#f0f0f0",
+                      display: "flex",
+                      justifyContent: "center",
+                      alignItems: "center",
                     }}
                   >
                     <img
@@ -262,12 +263,9 @@ export default function ResultsPage() {
                       alt={frame.event_label || `Frame ${frame.index}`}
                       key={`${frame.frame_id}-${frame.event_class}`}
                       style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
                         width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
+                        height: "auto",
+                        display: "block",
                       }}
                       onError={(e) => {
                         console.error(`Failed to load image for ${frame.event_label}:`, frame.url);

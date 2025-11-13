@@ -1,3 +1,8 @@
+"""
+DEPRECATED: This queue system is deprecated in favor of synchronous processing.
+The upload endpoint now processes videos synchronously and returns results immediately.
+This module is kept for backward compatibility with the manual processing endpoint.
+"""
 import logging
 import threading
 from queue import Queue, Empty
@@ -14,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Simple in-process task queue
 # Queue items are tuples: (video_id: UUID, temp_file_path: Optional[str])
+# DEPRECATED: Queue system is deprecated in favor of synchronous processing
 task_queue = Queue()
 worker_thread = None
 worker_running = False

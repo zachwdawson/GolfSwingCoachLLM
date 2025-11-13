@@ -12,6 +12,8 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="Golf Swing Coach API", version="0.1.0")
 
 app.add_middleware(
@@ -24,7 +26,13 @@ app.add_middleware(
 
 app.include_router(upload_router)
 
+# Create frames directory on startup
+os.makedirs(settings.frames_dir, exist_ok=True)
+logger.info(f"Frames directory created/verified: {settings.frames_dir}")
+
 # Start background worker for frame processing (skip during tests)
+# Note: Queue system is deprecated in favor of synchronous processing
+# Keeping for backward compatibility with manual processing endpoint
 if not os.environ.get("TESTING"):
     start_worker()
 

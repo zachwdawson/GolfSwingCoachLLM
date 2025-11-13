@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     pose_input_size: int = 256  # 192 for lightning, 256 for thunder
     pose_keypoint_threshold: float = 0.11  # Minimum confidence for drawing keypoints
     save_annotated_only: bool = True  # If True, replace original with annotated; if False, save both
+    frames_dir: str = "/app/frames"  # Base directory for storing frame images locally
+    api_base_url: str = "http://localhost:8000"  # Base URL for API (used for absolute frame URLs)
 
     model_config = SettingsConfigDict(
         env_file=".env",

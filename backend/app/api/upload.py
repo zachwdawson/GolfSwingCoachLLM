@@ -4,16 +4,18 @@ import json
 import tempfile
 import os
 from io import BytesIO
-from fastapi import APIRouter, File, UploadFile, HTTPException, status, Depends
+from fastapi import APIRouter, File, UploadFile, HTTPException, status, Depends, BackgroundTasks
+from fastapi.responses import FileResponse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from app.core.config import settings
 from app.models.video import Video, Base
 from app.models.frame import Frame  # Import to ensure table is created
-from app.schemas.video import VideoCreate, VideoResponse
+from app.schemas.video import VideoCreate, VideoResponse, VideoProcessResponse
 from app.schemas.frame import FrameResponse, FramesListResponse
 from app.services.aws import s3_client
 from app.processing.queue import enqueue_frame_extraction
+from app.processing.frames import extract_frames, upload_video_and_frames_to_s3
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -50,9 +52,13 @@ def get_db():
         db.close()
 
 
-@router.post("/upload", response_model=VideoCreate, status_code=status.HTTP_200_OK)
-async def upload_video(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Upload video file to S3."""
+@router.post("/upload", response_model=VideoProcessResponse, status_code=status.HTTP_200_OK)
+async def upload_video(
+    file: UploadFile = File(...), 
+    db: Session = Depends(get_db),
+    background_tasks: BackgroundTasks = BackgroundTasks()
+):
+    """Upload and process video file synchronously. Returns frames and metrics immediately."""
     logger.info(f"Upload request: {file.filename}")
 
     # Validate MIME type
@@ -121,24 +127,77 @@ async def upload_video(file: UploadFile = File(...), db: Session = Depends(get_d
                 detail="Failed to save video record",
             )
 
-        # Upload video to S3 immediately as fallback
-        try:
-            logger.info(f"Uploading video to S3: {s3_key}")
-            with open(temp_file_path, "rb") as video_file:
-                content_type = "video/mp4"  # default
-                if file_extension.lower() in ["mov"]:
-                    content_type = "video/quicktime"
-                success = s3_client.upload_file(video_file, s3_key, content_type)
-                if success:
-                    logger.info(f"Successfully uploaded video to S3: {s3_key}")
-                else:
-                    logger.warning(f"Failed to upload video to S3: {s3_key}, but temp file is available")
-        except Exception as e:
-            logger.warning(f"Error uploading video to S3: {e}, but temp file is available", exc_info=True)
-
-        # Enqueue frame extraction with temp file path
-        enqueue_frame_extraction(video_id, temp_file_path=temp_file_path)
-        logger.info(f"Enqueued video for frame extraction: {video_id} with temp file: {temp_file_path}")
+        # Process video synchronously
+        logger.info(f"Starting synchronous video processing: {video_id}")
+        result = extract_frames(video_id, db, temp_file_path=temp_file_path)
+        
+        if result is None:
+            # Processing failed
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.unlink(temp_file_path)
+                except Exception:
+                    pass
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Video processing failed",
+            )
+        
+        frames = result["frames"]
+        metrics = result["metrics"]
+        
+        # Add background task for S3 upload
+        background_tasks.add_task(
+            upload_video_and_frames_to_s3,
+            video_id,
+            temp_file_path,
+            frames
+        )
+        logger.info(f"Added background task for S3 upload: {video_id}")
+        
+        # Clean up temp file after processing (S3 upload will use it in background)
+        # Note: We keep the file for background upload, but could clean it up if needed
+        
+        # Convert frames to FrameResponse with absolute URLs
+        frame_responses = []
+        for frame in frames:
+            # Extract filename from s3_key (format: frames/{video_id}/filename.jpg)
+            frame_filename = os.path.basename(frame.s3_key)
+            # Use absolute URL so frontend can load images correctly
+            local_url = f"{settings.api_base_url}/frames/{video_id}/{frame_filename}"
+            
+            # Parse swing_metrics JSON string to dict
+            swing_metrics = None
+            if frame.swing_metrics:
+                try:
+                    swing_metrics = json.loads(frame.swing_metrics)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
+                    swing_metrics = None
+            
+            frame_responses.append(
+                FrameResponse(
+                    frame_id=frame.id,
+                    video_id=frame.video_id,
+                    index=frame.index,
+                    url=local_url,
+                    width=frame.width,
+                    height=frame.height,
+                    created_at=frame.created_at.isoformat(),
+                    event_label=frame.event_label,
+                    event_class=frame.event_class,
+                    swing_metrics=swing_metrics,
+                )
+            )
+        
+        logger.info(f"Successfully processed video: {video_id} with {len(frame_responses)} frames")
+        
+        return VideoProcessResponse(
+            video_id=video_id,
+            status="processed",
+            frames=frame_responses,
+            metrics=metrics
+        )
 
     except Exception as e:
         logger.error(f"Error saving video to temp file: {e}", exc_info=True)
@@ -161,6 +220,36 @@ async def upload_video(file: UploadFile = File(...), db: Session = Depends(get_d
     return VideoCreate(video_id=video_id, s3_key=s3_key)
 
 
+@router.get("/frames/{video_id}/{filename}")
+async def get_frame_image(
+    video_id: uuid.UUID,
+    filename: str,
+    db: Session = Depends(get_db)
+):
+    """Serve frame image directly from local filesystem."""
+    # Verify video exists
+    video = db.query(Video).filter(Video.id == video_id).first()
+    if not video:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Video {video_id} not found",
+        )
+    
+    frame_path = os.path.join(settings.frames_dir, str(video_id), filename)
+    
+    if not os.path.exists(frame_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Frame not found: {filename}",
+        )
+    
+    return FileResponse(
+        frame_path,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
+
+
 @router.get("/videos/{video_id}", response_model=VideoResponse)
 async def get_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
     """Get video status and signed URLs."""
@@ -171,13 +260,15 @@ async def get_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
             detail=f"Video {video_id} not found",
         )
 
-    # Get frame URLs if available
+    # Get frame URLs if available (use absolute URLs)
     frames = db.query(Frame).filter(Frame.video_id == video_id).order_by(Frame.index).all()
     frame_urls = []
     for frame in frames:
-        url = s3_client.generate_presigned_url(frame.s3_key)
-        if url:
-            frame_urls.append(url)
+        # Extract filename from s3_key (format: frames/{video_id}/filename.jpg)
+        frame_filename = os.path.basename(frame.s3_key)
+        # Use absolute URL so frontend can load images correctly
+        local_url = f"{settings.api_base_url}/frames/{video_id}/{frame_filename}"
+        frame_urls.append(local_url)
 
     return VideoResponse(
         video_id=video.id,
@@ -229,36 +320,39 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
     
     frame_responses = []
     for frame in frames:
-        url = s3_client.generate_presigned_url(frame.s3_key)
-        if url:
-            # Parse swing_metrics JSON string to dict
-            swing_metrics = None
-            if frame.swing_metrics:
-                try:
-                    swing_metrics = json.loads(frame.swing_metrics)
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
-                    swing_metrics = None
-            
-            logger.debug(
-                f"Frame {frame.id}: event_class={frame.event_class}, "
-                f"event_label={frame.event_label}, s3_key={frame.s3_key}"
+        # Extract filename from s3_key (format: frames/{video_id}/filename.jpg)
+        frame_filename = os.path.basename(frame.s3_key)
+        # Use absolute URL so frontend can load images correctly
+        local_url = f"{settings.api_base_url}/frames/{video_id}/{frame_filename}"
+        
+        # Parse swing_metrics JSON string to dict
+        swing_metrics = None
+        if frame.swing_metrics:
+            try:
+                swing_metrics = json.loads(frame.swing_metrics)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
+                swing_metrics = None
+        
+        logger.debug(
+            f"Frame {frame.id}: event_class={frame.event_class}, "
+            f"event_label={frame.event_label}, s3_key={frame.s3_key}"
+        )
+        
+        frame_responses.append(
+            FrameResponse(
+                frame_id=frame.id,
+                video_id=frame.video_id,
+                index=frame.index,
+                url=local_url,
+                width=frame.width,
+                height=frame.height,
+                created_at=frame.created_at.isoformat(),
+                event_label=frame.event_label,
+                event_class=frame.event_class,
+                swing_metrics=swing_metrics,
             )
-            
-            frame_responses.append(
-                FrameResponse(
-                    frame_id=frame.id,
-                    video_id=frame.video_id,
-                    index=frame.index,
-                    url=url,
-                    width=frame.width,
-                    height=frame.height,
-                    created_at=frame.created_at.isoformat(),
-                    event_label=frame.event_label,
-                    event_class=frame.event_class,
-                    swing_metrics=swing_metrics,
-                )
-            )
+        )
 
     return FramesListResponse(video_id=video_id, frames=frame_responses)
 

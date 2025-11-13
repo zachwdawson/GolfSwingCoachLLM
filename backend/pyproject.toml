@@ -25,6 +25,8 @@ dependencies = [
     "tensorflow>=2.13.0",
     "tensorflow-hub>=0.15.0",
     "opencv-python>=4.8.0",
+    "pandas>=2.0.0",
+    "matplotlib>=3.7.0",
 ]
 
 [project.optional-dependencies]

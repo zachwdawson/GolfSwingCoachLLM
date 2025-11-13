@@ -4,8 +4,9 @@ import tempfile
 import os
 import time
 import json
+import shutil
 import numpy as np
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from uuid import UUID
 from PIL import Image
 from sqlalchemy.orm import Session
@@ -25,16 +26,22 @@ logger = logging.getLogger(__name__)
 NUM_EVENT_FRAMES = 8
 
 
-def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = None) -> bool:
+def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """
     Extract event frames from a video using model-based labeling.
-    Saves frames to S3 and writes metadata to database.
+    Saves frames locally and writes metadata to database.
     
     Args:
         video_id: UUID of the video to process
         db: Database session
         temp_file_path: Optional path to temporary file containing the video.
                        If provided, uses this file instead of downloading from S3.
+    
+    Returns:
+        Dict containing:
+            - frames: list[Frame] - All processed frames
+            - metrics: Dict[str, Dict[str, Any]] - Swing metrics by position
+        None on failure
     """
     temp_video_path = None
     temp_file_owned = False  # Track if we created the temp file (need to clean up)
@@ -44,7 +51,7 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
         video = db.query(Video).filter(Video.id == video_id).first()
         if not video:
             logger.error(f"Video not found: {video_id}")
-            return False
+            return None
 
         # Update video status
         video.status = "processing"
@@ -56,7 +63,7 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
             logger.error("Model not available, cannot extract frames")
             video.status = "failed"
             db.commit()
-            return False
+            return None
 
         # Determine video file path: use temp_file_path if provided, otherwise download from S3
         if temp_file_path:
@@ -101,22 +108,27 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                         logger.error(f"Failed to download video from S3: {video.s3_key}")
                         video.status = "failed"
                         db.commit()
-                        return False
+                        return None
                     logger.info(f"Downloaded video from S3: {video.s3_key}")
                 except Exception as e:
                     logger.error(f"Error downloading from S3: {e}", exc_info=True)
                     video.status = "failed"
                     db.commit()
-                    return False
+                    return None
 
         try:
+            # Create local frames directory for this video
+            local_frames_dir = os.path.join(settings.frames_dir, str(video_id))
+            os.makedirs(local_frames_dir, exist_ok=True)
+            logger.info(f"Created frames directory: {local_frames_dir}")
+
             # Get video FPS for timestamp calculation
             fps = get_video_fps(temp_video_path)
             if fps is None:
                 logger.error(f"Failed to get video FPS: {video_id}")
                 video.status = "failed"
                 db.commit()
-                return False
+                return None
 
             # Preprocess video for model
             logger.info("Preprocessing video for model inference")
@@ -141,7 +153,7 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                 logger.error("No event frames identified by model")
                 video.status = "failed"
                 db.commit()
-                return False
+                return None
 
             # Log the predicted frame indices for debugging
             logger.info("Model predicted event frames:")
@@ -169,6 +181,8 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                 swing_keypoints = {}
                 # Dictionary to store Frame objects for later metrics storage
                 frame_objects = {}
+                # List to collect all processed frames
+                processed_frames = []
                 frame_index = 0
                 for event_class, frame_idx in sorted(event_frames.items()):
                     # Calculate timestamp from frame index
@@ -242,25 +256,24 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                         frame_to_upload = frame_path
                         keypoints_json = None
 
-                    # Upload frame to S3
-                    frame_s3_key = (
-                        f"videos/{video_id}/frames/event_{event_class}_{event_label}.jpg"
-                    )
-                    with open(frame_to_upload, "rb") as frame_file:
-                        success = s3_client.upload_file(
-                            frame_file,
-                            frame_s3_key,
-                            "image/jpeg",
-                        )
-                        if not success:
-                            logger.error(f"Failed to upload frame {frame_index} to S3")
-                            continue
+                    # Save frame locally instead of uploading to S3
+                    frame_filename = f"event_{event_class}_{event_label}.jpg"
+                    local_frame_path = os.path.join(local_frames_dir, frame_filename)
+                    
+                    # Copy frame to local storage
+                    shutil.copy2(frame_to_upload, local_frame_path)
+                    logger.info(f"Saved frame locally: {local_frame_path}")
+                    
+                    # Store relative path in s3_key field (for tracking, actual S3 upload happens in background)
+                    frame_s3_key = f"frames/{video_id}/{frame_filename}"
+                    # Also track the actual S3 backup path
+                    frame_s3_backup_key = f"videos/{video_id}/frames/{frame_filename}"
 
                     # Save frame metadata to database
                     frame = Frame(
                         video_id=video_id,
                         index=frame_index,
-                        s3_key=frame_s3_key,
+                        s3_key=frame_s3_key,  # Store relative local path
                         width=width,
                         height=height,
                         event_label=event_label,
@@ -268,11 +281,12 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                         pose_keypoints=keypoints_json,
                     )
                     db.add(frame)
+                    processed_frames.append(frame)
                     logger.info(
                         f"Saved frame {frame_index}: {event_label} "
                         f"(class {event_class}) at video frame {frame_idx} "
                         f"(timestamp {timestamp:.3f}s, fps {fps:.2f}) "
-                        f"-> S3 key: {frame_s3_key} "
+                        f"-> Local: {local_frame_path} "
                         f"({width}x{height})"
                     )
 
@@ -290,6 +304,7 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                     frame_index += 1
 
                 # Compute swing metrics if we have all five key positions
+                metrics_result = {}
                 if len(swing_keypoints) == 5:
                     try:
                         logger.info("Computing swing metrics")
@@ -323,32 +338,12 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
                 video.status = "processed"
                 db.commit()
                 logger.info(f"Successfully processed video: {video_id}")
-            
-            # Upload video to S3 after successful processing
-            # This is done here so we only upload if processing succeeded
-            if temp_video_path and os.path.exists(temp_video_path):
-                try:
-                    logger.info(f"Uploading processed video to S3: {video.s3_key}")
-                    with open(temp_video_path, "rb") as video_file:
-                        # Determine content type from s3_key extension
-                        content_type = "video/mp4"  # default
-                        if video.s3_key.endswith(".mov") or video.s3_key.endswith(".MOV"):
-                            content_type = "video/quicktime"
-                        
-                        success = s3_client.upload_file(
-                            video_file,
-                            video.s3_key,
-                            content_type
-                        )
-                        if success:
-                            logger.info(f"Successfully uploaded video to S3: {video.s3_key}")
-                        else:
-                            logger.warning(f"Failed to upload video to S3: {video.s3_key}, but processing succeeded")
-                except Exception as e:
-                    logger.error(f"Error uploading video to S3: {e}", exc_info=True)
-                    # Don't fail processing if S3 upload fails - video is already processed
-            
-            return True
+                
+                # Return frames and metrics data
+                return {
+                    "frames": processed_frames,
+                    "metrics": metrics_result
+                }
 
         finally:
             # Clean up temp video file only if we created it (downloaded from S3)
@@ -375,7 +370,99 @@ def extract_frames(video_id: UUID, db: Session, temp_file_path: Optional[str] = 
             db.commit()
         except Exception:
             pass
-        return False
+        return None
+
+
+def upload_video_and_frames_to_s3(video_id: UUID, video_path: str, frames: List[Frame]) -> None:
+    """
+    Upload video and frames to S3 for backup.
+    This function is designed to be called from BackgroundTasks.
+    
+    Args:
+        video_id: UUID of the video
+        video_path: Path to the video file
+        frames: List of Frame objects to upload
+    """
+    logger.info(f"Starting background S3 upload for video {video_id}")
+    
+    try:
+        # Get video record to get s3_key
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from app.models.video import Video
+        from app.core.config import settings
+        
+        engine = create_engine(settings.db_url)
+        SessionLocal = sessionmaker(bind=engine)
+        db = SessionLocal()
+        
+        try:
+            video = db.query(Video).filter(Video.id == video_id).first()
+            if not video:
+                logger.error(f"Video not found for S3 upload: {video_id}")
+                return
+            
+            # Upload video to S3
+            if video_path and os.path.exists(video_path):
+                try:
+                    logger.info(f"Uploading video to S3: {video.s3_key}")
+                    with open(video_path, "rb") as video_file:
+                        # Determine content type from s3_key extension
+                        content_type = "video/mp4"  # default
+                        if video.s3_key.endswith(".mov") or video.s3_key.endswith(".MOV"):
+                            content_type = "video/quicktime"
+                        
+                        success = s3_client.upload_file(
+                            video_file,
+                            video.s3_key,
+                            content_type
+                        )
+                        if success:
+                            logger.info(f"Successfully uploaded video to S3: {video.s3_key}")
+                        else:
+                            logger.warning(f"Failed to upload video to S3: {video.s3_key}")
+                except Exception as e:
+                    logger.error(f"Error uploading video to S3: {e}", exc_info=True)
+            
+            # Upload frames to S3
+            for frame in frames:
+                try:
+                    # Extract filename from s3_key (which contains relative path: frames/{video_id}/filename.jpg)
+                    frame_filename = os.path.basename(frame.s3_key)
+                    frame_s3_key = f"videos/{video_id}/frames/{frame_filename}"
+                    
+                    # Get local frame path
+                    local_frame_path = os.path.join(settings.frames_dir, str(video_id), frame_filename)
+                    
+                    if os.path.exists(local_frame_path):
+                        with open(local_frame_path, "rb") as frame_file:
+                            success = s3_client.upload_file(
+                                frame_file,
+                                frame_s3_key,
+                                "image/jpeg"
+                            )
+                            if success:
+                                logger.debug(f"Uploaded frame to S3: {frame_s3_key}")
+                            else:
+                                logger.warning(f"Failed to upload frame to S3: {frame_s3_key}")
+                    else:
+                        logger.warning(f"Local frame not found: {local_frame_path}")
+                except Exception as e:
+                    logger.error(f"Error uploading frame {frame.id} to S3: {e}", exc_info=True)
+            
+            logger.info(f"Completed background S3 upload for video {video_id}")
+        finally:
+            db.close()
+        
+        # Clean up temp video file after S3 upload
+        if video_path and os.path.exists(video_path):
+            try:
+                os.unlink(video_path)
+                logger.debug(f"Cleaned up temp video file after S3 upload: {video_path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temp video file {video_path}: {e}")
+    except Exception as e:
+        logger.error(f"Error in background S3 upload for video {video_id}: {e}", exc_info=True)
 
 
 def get_video_duration(video_path: str) -> Optional[float]:
