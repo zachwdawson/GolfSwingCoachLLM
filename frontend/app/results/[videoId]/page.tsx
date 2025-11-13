@@ -23,6 +23,17 @@ interface VideoStatus {
   frame_urls: string[];
 }
 
+interface SwingFlaw {
+  id: string;
+  title: string;
+  level: string | null;
+  contact: string | null;
+  ball_shape: string | null;
+  cues: string[];
+  drills: Array<{ [key: string]: string }>;
+  similarity: number;
+}
+
 export default function ResultsPage() {
   const params = useParams();
   const router = useRouter();
@@ -30,6 +41,7 @@ export default function ResultsPage() {
 
   const [videoStatus, setVideoStatus] = useState<VideoStatus | null>(null);
   const [frames, setFrames] = useState<Frame[]>([]);
+  const [swingFlaws, setSwingFlaws] = useState<SwingFlaw[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [polling, setPolling] = useState(true);
@@ -109,6 +121,7 @@ export default function ResultsPage() {
       })));
       
       setFrames(framesWithCacheBust);
+      setSwingFlaws(data.swing_flaws || []);
       setLoading(false);
     } catch (err) {
       console.error("Error fetching frames:", err);
@@ -157,6 +170,39 @@ export default function ResultsPage() {
     }
 
     return output || "No metrics available";
+  };
+
+  const formatSwingFlaws = (): string => {
+    if (swingFlaws.length === 0) return "No swing flaws identified.";
+
+    let output = "";
+    swingFlaws.forEach((flaw, index) => {
+      output += `${index + 1}. ${flaw.title}\n`;
+      output += `   Similarity: ${(flaw.similarity * 100).toFixed(1)}%\n`;
+      
+      if (flaw.cues && flaw.cues.length > 0) {
+        output += `   Cues:\n`;
+        flaw.cues.forEach((cue) => {
+          output += `     - ${cue}\n`;
+        });
+      }
+      
+      if (flaw.drills && flaw.drills.length > 0) {
+        output += `   Drills:\n`;
+        flaw.drills.forEach((drill) => {
+          if (drill["drill explanation"]) {
+            output += `     - ${drill["drill explanation"]}\n`;
+            if (drill["drill video"]) {
+              output += `       Video: ${drill["drill video"]}\n`;
+            }
+          }
+        });
+      }
+      
+      output += "\n";
+    });
+
+    return output;
   };
 
   if (loading && polling) {
@@ -282,11 +328,31 @@ export default function ResultsPage() {
             </div>
           </section>
 
-          <section>
+          <section style={{ marginBottom: "3rem" }}>
             <h2 style={{ marginBottom: "1rem" }}>Swing Metrics</h2>
             <textarea
               readOnly
               value={formatMetrics()}
+              style={{
+                width: "100%",
+                minHeight: "300px",
+                padding: "1rem",
+                fontSize: "0.95rem",
+                fontFamily: "monospace",
+                border: "1px solid #ddd",
+                borderRadius: "4px",
+                backgroundColor: "#f9f9f9",
+                resize: "vertical",
+                lineHeight: "1.6",
+              }}
+            />
+          </section>
+
+          <section>
+            <h2 style={{ marginBottom: "1rem" }}>Identified Swing Flaws</h2>
+            <textarea
+              readOnly
+              value={formatSwingFlaws()}
               style={{
                 width: "100%",
                 minHeight: "300px",

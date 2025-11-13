@@ -1,4 +1,25 @@
-[
+[    
+  {
+    "id": "good-swing",
+    "title": "Good Swing",
+    "level": "any",
+    "contact": "normal",
+    "ball-shape": "normal",
+    "metrics": [],
+    "metric_expectations": {
+      "address_spine_forward_bend_deg": "normal",
+      "address_shoulder_alignment_deg": "normal",
+      "top_shoulder_turn_deg": "normal",
+      "top_pelvis_turn_deg": "normal",
+      "mid_ds_hip_open_deg": "normal",
+      "mid_ds_trail_elbow_flexion_deg": "normal",
+      "impact_hip_open_deg": "normal",
+      "impact_forward_shaft_lean_deg": "normal",
+      "finish_balance_over_lead_foot_norm": "normal"
+    },
+    "cues": ["Keep it up!"],
+    "drills": []
+  },
     {
       "id": "early-extension",
       "title": "Early Extension",

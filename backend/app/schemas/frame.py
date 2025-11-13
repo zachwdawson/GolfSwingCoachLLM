@@ -1,6 +1,7 @@
 from uuid import UUID
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
+from app.schemas.video import SwingFlaw
 
 
 class FrameResponse(BaseModel):
@@ -19,4 +20,5 @@ class FrameResponse(BaseModel):
 class FramesListResponse(BaseModel):
     video_id: UUID
     frames: list[FrameResponse]
+    swing_flaws: List[SwingFlaw] = []  # Top 3 most similar swing flaws
 

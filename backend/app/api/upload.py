@@ -11,7 +11,9 @@ from sqlalchemy.orm import sessionmaker, Session
 from app.core.config import settings
 from app.models.video import Video, Base
 from app.models.frame import Frame  # Import to ensure table is created
-from app.schemas.video import VideoCreate, VideoResponse, VideoProcessResponse
+from app.schemas.video import VideoCreate, VideoResponse, VideoProcessResponse, SwingFlaw
+from app.core.swing_vector import build_swing_vector
+from app.core.swing_matcher import find_similar_swing_patterns
 from app.schemas.frame import FrameResponse, FramesListResponse
 from app.services.aws import s3_client
 from app.processing.queue import enqueue_frame_extraction
@@ -146,6 +148,33 @@ async def upload_video(
         frames = result["frames"]
         metrics = result["metrics"]
         
+        # Identify swing flaws using vector similarity
+        swing_flaws = []
+        try:
+            if metrics:
+                # Build swing vector from metrics
+                swing_vector = build_swing_vector(metrics)
+                # Find top 3 similar swing patterns
+                similar_patterns = find_similar_swing_patterns(swing_vector, limit=3)
+                # Convert to SwingFlaw objects
+                swing_flaws = [
+                    SwingFlaw(
+                        id=pattern["id"],
+                        title=pattern["title"],
+                        level=pattern.get("level"),
+                        contact=pattern.get("contact"),
+                        ball_shape=pattern.get("ball_shape"),
+                        cues=pattern.get("cues", []),
+                        drills=pattern.get("drills", []),
+                        similarity=pattern.get("similarity", 0.0)
+                    )
+                    for pattern in similar_patterns
+                ]
+                logger.info(f"Identified {len(swing_flaws)} swing flaws for video {video_id}")
+        except Exception as e:
+            logger.error(f"Error identifying swing flaws: {e}", exc_info=True)
+            # Continue without swing flaws if identification fails
+        
         # Add background task for S3 upload
         background_tasks.add_task(
             upload_video_and_frames_to_s3,
@@ -196,7 +225,8 @@ async def upload_video(
             video_id=video_id,
             status="processed",
             frames=frame_responses,
-            metrics=metrics
+            metrics=metrics,
+            swing_flaws=swing_flaws
         )
 
     except Exception as e:
@@ -354,7 +384,46 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
             )
         )
 
-    return FramesListResponse(video_id=video_id, frames=frame_responses)
+    # Compute swing flaws from metrics
+    swing_flaws = []
+    try:
+        # Aggregate metrics by position from frames
+        metrics_by_position = {}
+        position_map = {0: "address", 3: "top", 4: "mid_ds", 5: "impact", 7: "finish"}
+        for frame in frames:
+            if frame.event_class in position_map and frame.swing_metrics:
+                position_name = position_map[frame.event_class]
+                try:
+                    metrics_dict = json.loads(frame.swing_metrics)
+                    metrics_by_position[position_name] = metrics_dict
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
+        
+        if metrics_by_position:
+            # Build swing vector from metrics
+            swing_vector = build_swing_vector(metrics_by_position)
+            # Find top 3 similar swing patterns
+            similar_patterns = find_similar_swing_patterns(swing_vector, limit=3)
+            # Convert to SwingFlaw objects
+            swing_flaws = [
+                SwingFlaw(
+                    id=pattern["id"],
+                    title=pattern["title"],
+                    level=pattern.get("level"),
+                    contact=pattern.get("contact"),
+                    ball_shape=pattern.get("ball_shape"),
+                    cues=pattern.get("cues", []),
+                    drills=pattern.get("drills", []),
+                    similarity=pattern.get("similarity", 0.0)
+                )
+                for pattern in similar_patterns
+            ]
+            logger.info(f"Computed {len(swing_flaws)} swing flaws for video {video_id}")
+    except Exception as e:
+        logger.error(f"Error computing swing flaws in get_frames: {e}", exc_info=True)
+        # Continue without swing flaws if computation fails
+
+    return FramesListResponse(video_id=video_id, frames=frame_responses, swing_flaws=swing_flaws)
 
 
 @router.get("/videos/{video_id}/metrics")
