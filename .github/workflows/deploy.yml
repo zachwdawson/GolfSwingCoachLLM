@@ -88,8 +88,8 @@ jobs:
       - name: Create or update AWS Secrets Manager secrets
         id: create-secrets
         env:
-          AWS_ACCESS_KEY_ID_VALUE: ${{ secrets.AWS_ACCESS_KEY_ID_VALUE }}
-          AWS_SECRET_ACCESS_KEY_VALUE: ${{ secrets.AWS_SECRET_ACCESS_KEY_VALUE }}
+          AWS_ACCESS_KEY_ID_VALUE: ${{ secrets.AWS_ACCESS_KEY_ID_VALUE || secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY_VALUE: ${{ secrets.AWS_SECRET_ACCESS_KEY_VALUE || secrets.AWS_SECRET_ACCESS_KEY }}
           OPENAI_API_KEY_VALUE: ${{ secrets.OPENAI_API_KEY_VALUE }}
         run: |
           SECRET_PREFIX="${{ env.PROJECT_NAME }}"

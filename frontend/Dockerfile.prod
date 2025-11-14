@@ -11,6 +11,9 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 # Copy source code
 COPY . .
 
+# Create public directory if it doesn't exist (Next.js requires it)
+RUN mkdir -p public
+
 # Build Next.js application
 RUN npm run build
 
@@ -27,8 +30,9 @@ RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit
 
 # Copy built application from builder
 COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
 COPY --from=builder /app/next.config.js ./next.config.js
+
+RUN mkdir -p public
 
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
