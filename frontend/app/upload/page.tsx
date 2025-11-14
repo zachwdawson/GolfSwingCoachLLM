@@ -8,6 +8,9 @@ export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
+  const [ballShape, setBallShape] = useState<string>("");
+  const [contact, setContact] = useState<string>("");
+  const [description, setDescription] = useState<string>("");
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -23,6 +26,15 @@ export default function UploadPage() {
     setResult(null);
     const formData = new FormData();
     formData.append("file", file);
+    if (ballShape) {
+      formData.append("ball_shape", ballShape);
+    }
+    if (contact) {
+      formData.append("contact", contact);
+    }
+    if (description) {
+      formData.append("description", description);
+    }
 
     try {
       const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
@@ -33,6 +45,8 @@ export default function UploadPage() {
 
       if (response.ok) {
         const data = await response.json();
+        // Store the full VideoProcessResponse in localStorage
+        localStorage.setItem(`videoResponse_${data.video_id}`, JSON.stringify(data));
         setResult("Upload successful! Redirecting to results...");
         // Redirect to results page after a brief delay
         setTimeout(() => {
@@ -57,6 +71,9 @@ export default function UploadPage() {
       </p>
       <div style={{ marginTop: "2rem" }}>
         <div style={{ marginBottom: "1rem" }}>
+          <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "500" }}>
+            Video File
+          </label>
           <input
             type="file"
             accept="video/mp4,video/mov"
@@ -72,6 +89,90 @@ export default function UploadPage() {
             }}
           />
         </div>
+
+        <div style={{ marginBottom: "1rem" }}>
+          <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "500" }}>
+            Ball Shape
+          </label>
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            {["left", "straight", "right"].map((shape) => (
+              <label
+                key={shape}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: uploading ? "not-allowed" : "pointer",
+                  opacity: uploading ? 0.6 : 1,
+                }}
+              >
+                <input
+                  type="radio"
+                  name="ballShape"
+                  value={shape}
+                  checked={ballShape === shape}
+                  onChange={(e) => setBallShape(e.target.value)}
+                  disabled={uploading}
+                  style={{ marginRight: "0.5rem" }}
+                />
+                <span style={{ textTransform: "capitalize" }}>{shape}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: "1rem" }}>
+          <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "500" }}>
+            Contact
+          </label>
+          <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+            {["fat", "thin", "normal", "inconsistent"].map((contactType) => (
+              <label
+                key={contactType}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  cursor: uploading ? "not-allowed" : "pointer",
+                  opacity: uploading ? 0.6 : 1,
+                }}
+              >
+                <input
+                  type="radio"
+                  name="contact"
+                  value={contactType}
+                  checked={contact === contactType}
+                  onChange={(e) => setContact(e.target.value)}
+                  disabled={uploading}
+                  style={{ marginRight: "0.5rem" }}
+                />
+                <span style={{ textTransform: "capitalize" }}>{contactType}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: "1rem" }}>
+          <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: "500" }}>
+            Description of Issues
+          </label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            disabled={uploading}
+            placeholder="Describe any issues you're experiencing with your swing..."
+            rows={6}
+            style={{
+              padding: "0.75rem",
+              fontSize: "1rem",
+              width: "100%",
+              border: "1px solid #ddd",
+              borderRadius: "4px",
+              fontFamily: "inherit",
+              resize: "vertical",
+              cursor: uploading ? "not-allowed" : "text",
+            }}
+          />
+        </div>
+
         <button
           onClick={handleUpload}
           disabled={!file || uploading}

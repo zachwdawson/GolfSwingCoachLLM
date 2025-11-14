@@ -18,6 +18,7 @@ from app.core.swing_vector import build_swing_vector
 from app.core.swing_matcher import find_similar_swing_patterns
 from app.schemas.frame import FrameResponse, FramesListResponse
 from app.services.aws import s3_client
+from app.services.openai_service import generate_practice_plan
 from app.processing.queue import enqueue_frame_extraction
 from app.processing.frames import extract_frames, upload_video_and_frames_to_s3
 
@@ -201,6 +202,25 @@ async def upload_video(
             logger.error(f"Error identifying swing flaws: {e}", exc_info=True)
             # Continue without swing flaws if identification fails
         
+        # Generate practice plan using OpenAI
+        practice_plan = None
+        try:
+            if metrics:
+                practice_plan = generate_practice_plan(
+                    metrics=metrics,
+                    swing_flaws=swing_flaws,
+                    description=description,
+                    ball_shape=mapped_ball_shape,
+                    contact=contact.lower() if contact else None
+                )
+                if practice_plan:
+                    logger.info(f"Generated practice plan for video {video_id}")
+                else:
+                    logger.info(f"Practice plan generation skipped or failed for video {video_id}")
+        except Exception as e:
+            logger.error(f"Error generating practice plan: {e}", exc_info=True)
+            # Continue without practice plan if generation fails
+        
         # Add background task for S3 upload
         background_tasks.add_task(
             upload_video_and_frames_to_s3,
@@ -255,7 +275,8 @@ async def upload_video(
             swing_flaws=swing_flaws,
             ball_shape=mapped_ball_shape,
             contact=contact.lower() if contact else None,
-            description=description
+            description=description,
+            practice_plan=practice_plan
         )
 
     except Exception as e:
@@ -334,6 +355,9 @@ async def get_video(video_id: uuid.UUID, db: Session = Depends(get_db)):
         status=video.status,
         s3_key=video.s3_key,
         frame_urls=frame_urls,
+        ball_shape=video.ball_shape,
+        contact=video.contact,
+        description=video.description,
     )
 
 

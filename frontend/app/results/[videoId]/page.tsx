@@ -21,6 +21,9 @@ interface VideoStatus {
   status: string;
   s3_key: string;
   frame_urls: string[];
+  ball_shape: string | null;
+  contact: string | null;
+  description: string | null;
 }
 
 interface SwingFlaw {
@@ -34,6 +37,18 @@ interface SwingFlaw {
   similarity: number;
 }
 
+interface VideoProcessResponse {
+  video_id: string;
+  status: string;
+  frames: Frame[];
+  metrics: Record<string, Record<string, any>>;
+  swing_flaws: SwingFlaw[];
+  ball_shape: string | null;
+  contact: string | null;
+  description: string | null;
+  practice_plan: string | null;
+}
+
 export default function ResultsPage() {
   const params = useParams();
   const router = useRouter();
@@ -45,8 +60,31 @@ export default function ResultsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [polling, setPolling] = useState(true);
+  const [videoProcessResponse, setVideoProcessResponse] = useState<VideoProcessResponse | null>(null);
+  const [metrics, setMetrics] = useState<Record<string, Record<string, any>>>({});
+  const [practicePlan, setPracticePlan] = useState<string | null>(null);
 
   const apiBase = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+
+  // Check localStorage for stored VideoProcessResponse
+  useEffect(() => {
+    if (!videoId) return;
+    
+    const storedResponse = localStorage.getItem(`videoResponse_${videoId}`);
+    if (storedResponse) {
+      try {
+        const parsed = JSON.parse(storedResponse);
+        setVideoProcessResponse(parsed);
+        if (parsed.practice_plan) {
+          setPracticePlan(parsed.practice_plan);
+        }
+        // Clean up localStorage after reading
+        localStorage.removeItem(`videoResponse_${videoId}`);
+      } catch (e) {
+        console.error("Error parsing stored video response:", e);
+      }
+    }
+  }, [videoId]);
 
   // Poll video status until processing is complete
   useEffect(() => {
@@ -122,6 +160,15 @@ export default function ResultsPage() {
       
       setFrames(framesWithCacheBust);
       setSwingFlaws(data.swing_flaws || []);
+      
+      // Fetch metrics
+      await fetchMetrics();
+      
+      // Check if practice plan is in the response (for direct upload flow)
+      if (data.practice_plan) {
+        setPracticePlan(data.practice_plan);
+      }
+      
       setLoading(false);
     } catch (err) {
       console.error("Error fetching frames:", err);
@@ -129,6 +176,37 @@ export default function ResultsPage() {
       setLoading(false);
     }
   };
+
+  const fetchMetrics = async () => {
+    try {
+      const response = await fetch(`${apiBase}/videos/${videoId}/metrics`);
+      if (response.ok) {
+        const data = await response.json();
+        setMetrics(data.metrics || {});
+      }
+    } catch (err) {
+      console.error("Error fetching metrics:", err);
+    }
+  };
+
+  // Construct VideoProcessResponse when all data is available
+  useEffect(() => {
+    if (!videoProcessResponse && frames.length > 0 && Object.keys(metrics).length > 0 && videoStatus) {
+      // Construct VideoProcessResponse from fetched data
+      const constructed: VideoProcessResponse = {
+        video_id: videoId,
+        status: videoStatus.status,
+        frames: frames,
+        metrics: metrics,
+        swing_flaws: swingFlaws,
+        ball_shape: videoStatus.ball_shape,
+        contact: videoStatus.contact,
+        description: videoStatus.description,
+        practice_plan: practicePlan,
+      };
+      setVideoProcessResponse(constructed);
+    }
+  }, [frames, metrics, swingFlaws, videoStatus, videoId, videoProcessResponse, practicePlan]);
 
   const formatMetrics = (): string => {
     if (frames.length === 0) return "No metrics available";
@@ -203,6 +281,87 @@ export default function ResultsPage() {
     });
 
     return output;
+  };
+
+  const renderMarkdown = (text: string): string => {
+    if (!text) return "";
+    
+    let html = text;
+    
+    // Escape HTML first to prevent XSS
+    html = html
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+    
+    // Split into lines for better processing
+    const lines = html.split("\n");
+    const processedLines: string[] = [];
+    let inList = false;
+    let listItems: string[] = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      // Check for headers
+      if (line.match(/^### /)) {
+        if (inList) {
+          processedLines.push(`<ul style='margin-top: 0.5rem; margin-bottom: 1rem; padding-left: 0; list-style-type: disc;'>${listItems.join("")}</ul>`);
+          listItems = [];
+          inList = false;
+        }
+        processedLines.push(`<h3 style='margin-top: 1.5rem; margin-bottom: 0.75rem; font-size: 1.3rem; font-weight: 600;'>${line.replace(/^### /, "")}</h3>`);
+      } else if (line.match(/^## /)) {
+        if (inList) {
+          processedLines.push(`<ul style='margin-top: 0.5rem; margin-bottom: 1rem; padding-left: 0; list-style-type: disc;'>${listItems.join("")}</ul>`);
+          listItems = [];
+          inList = false;
+        }
+        processedLines.push(`<h2 style='margin-top: 2rem; margin-bottom: 1rem; font-size: 1.5rem; font-weight: 600; border-bottom: 2px solid #ddd; padding-bottom: 0.5rem;'>${line.replace(/^## /, "")}</h2>`);
+      } else if (line.match(/^# /)) {
+        if (inList) {
+          processedLines.push(`<ul style='margin-top: 0.5rem; margin-bottom: 1rem; padding-left: 0; list-style-type: disc;'>${listItems.join("")}</ul>`);
+          listItems = [];
+          inList = false;
+        }
+        processedLines.push(`<h1 style='margin-top: 2rem; margin-bottom: 1rem; font-size: 1.8rem; font-weight: 700;'>${line.replace(/^# /, "")}</h1>`);
+      } else if (line.match(/^\d+\. /) || line.match(/^- /)) {
+        // List item
+        if (!inList) {
+          inList = true;
+        }
+        const content = line.replace(/^(\d+\. |- )/, "");
+        listItems.push(`<li style='margin-left: 1.5rem; margin-bottom: 0.5rem;'>${content}</li>`);
+      } else {
+        // Regular line
+        if (inList) {
+          processedLines.push(`<ul style='margin-top: 0.5rem; margin-bottom: 1rem; padding-left: 0; list-style-type: disc;'>${listItems.join("")}</ul>`);
+          listItems = [];
+          inList = false;
+        }
+        if (line.trim()) {
+          processedLines.push(line);
+        } else {
+          processedLines.push("<br />");
+        }
+      }
+    }
+    
+    // Close any remaining list
+    if (inList) {
+      processedLines.push(`<ul style='margin-top: 0.5rem; margin-bottom: 1rem; padding-left: 0; list-style-type: disc;'>${listItems.join("")}</ul>`);
+    }
+    
+    html = processedLines.join("\n");
+    
+    // Process bold and italic (bold before italic to handle nested)
+    html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
+    
+    // Convert remaining line breaks
+    html = html.replace(/\n/g, "<br />");
+    
+    return html;
   };
 
   if (loading && polling) {
@@ -328,6 +487,26 @@ export default function ResultsPage() {
             </div>
           </section>
 
+          {practicePlan && (
+            <section style={{ marginBottom: "3rem" }}>
+              <h2 style={{ marginBottom: "1rem" }}>Practice Plan</h2>
+              <div
+                style={{
+                  padding: "1.5rem",
+                  border: "1px solid #ddd",
+                  borderRadius: "8px",
+                  backgroundColor: "#f9f9f9",
+                  lineHeight: "1.8",
+                  fontSize: "1rem",
+                  fontFamily: "system-ui, -apple-system, sans-serif",
+                }}
+                dangerouslySetInnerHTML={{
+                  __html: renderMarkdown(practicePlan),
+                }}
+              />
+            </section>
+          )}
+
           <section style={{ marginBottom: "3rem" }}>
             <h2 style={{ marginBottom: "1rem" }}>Swing Metrics</h2>
             <textarea
@@ -348,7 +527,7 @@ export default function ResultsPage() {
             />
           </section>
 
-          <section>
+          <section style={{ marginBottom: "3rem" }}>
             <h2 style={{ marginBottom: "1rem" }}>Identified Swing Flaws</h2>
             <textarea
               readOnly
@@ -367,6 +546,28 @@ export default function ResultsPage() {
               }}
             />
           </section>
+
+          {videoProcessResponse && (
+            <section>
+              <h2 style={{ marginBottom: "1rem" }}>Full VideoProcessResponse</h2>
+              <textarea
+                readOnly
+                value={JSON.stringify(videoProcessResponse, null, 2)}
+                style={{
+                  width: "100%",
+                  minHeight: "400px",
+                  padding: "1rem",
+                  fontSize: "0.9rem",
+                  fontFamily: "monospace",
+                  border: "1px solid #ddd",
+                  borderRadius: "4px",
+                  backgroundColor: "#f9f9f9",
+                  resize: "vertical",
+                  lineHeight: "1.4",
+                }}
+              />
+            </section>
+          )}
         </>
       ) : (
         <div style={{ textAlign: "center", padding: "3rem" }}>

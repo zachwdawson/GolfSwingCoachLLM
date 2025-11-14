@@ -12,10 +12,10 @@ RUN mkdir -p /app/frames
 
 # Copy and install dependencies first
 COPY pyproject.toml ./
-# RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-#     pip install --no-cache-dir -e .
-RUN pip install --upgrade pip setuptools wheel && \
-pip install -e .
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -e .
+# RUN pip install --upgrade pip setuptools wheel && \
+# pip install -e .
 
 COPY app ./app
 

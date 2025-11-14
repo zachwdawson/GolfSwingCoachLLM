@@ -15,6 +15,9 @@ class VideoResponse(BaseModel):
     status: str
     s3_key: str
     frame_urls: list[str] = []
+    ball_shape: Optional[str] = None
+    contact: Optional[str] = None
+    description: Optional[str] = None
 
 
 class VideoProcessResponse(BaseModel):
@@ -26,4 +29,5 @@ class VideoProcessResponse(BaseModel):
     ball_shape: Optional[str] = None
     contact: Optional[str] = None
     description: Optional[str] = None
+    practice_plan: Optional[str] = None  # AI-generated practice plan in markdown format
 

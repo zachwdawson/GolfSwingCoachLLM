@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,12 +17,21 @@ class Settings(BaseSettings):
     save_annotated_only: bool = True  # If True, replace original with annotated; if False, save both
     frames_dir: str = "/app/frames"  # Base directory for storing frame images locally
     api_base_url: str = "http://localhost:8000"  # Base URL for API (used for absolute frame URLs)
+    openai_api_key: str = ""  # OpenAI API key for practice plan generation
 
     model_config = SettingsConfigDict(
         env_file=".env",
+        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",  # Ignore extra environment variables
     )
+    
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        # Also check environment variable directly (for Docker/container environments)
+        # This ensures we pick up env vars set by docker-compose even if .env file isn't found
+        if not self.openai_api_key:
+            self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
 
 
 settings = Settings()
