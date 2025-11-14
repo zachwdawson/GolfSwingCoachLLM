@@ -105,7 +105,7 @@ def generate_practice_plan(
         # Build the prompt
         prompt_parts = [
             "You are an expert golf swing coach. Based on the following swing analysis data, "
-            "generate a comprehensive, structured practice plan in markdown format.",
+            "explain any flaws in the swing and provide a practice plan to improve the swing with the provided drills.",
             "",
             "## Swing Metrics:",
             metrics_text,
@@ -133,10 +133,10 @@ def generate_practice_plan(
             "",
             "## Instructions:",
             "Generate a structured practice plan in markdown format with the following sections:",
-            "1. **Executive Summary** - A brief overview of the swing analysis",
-            "2. **Key Swing Issues Identified** - Summary of the main problems found",
-            "3. **Practice Plan** - Specific drills, cues, and exercises organized by priority",
-            "4. **Next Steps** - Recommended progression and follow-up actions",
+            # "1. **Executive Summary** - A brief overview of the swing analysis",
+            "1. **Key Swing Issues Identified** - Summary of the main problems found",
+            "2. **Practice Plan** - Specific drills, cues, and exercises organized by priority",
+            # "4. **Next Steps** - Recommended progression and follow-up actions",
             "",
             "Make the plan actionable, specific, and encouraging. Focus on the most critical issues first. "
             "Include specific drills from the identified swing flaws when available.",

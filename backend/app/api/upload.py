@@ -183,6 +183,12 @@ async def upload_video(
                 )
                 # Find top 3 similar swing patterns
                 similar_patterns = find_similar_swing_patterns(swing_vector, limit=3)
+                # Filter: always include top one, and any others with similarity >= 0.7
+                filtered_patterns = []
+                for i, pattern in enumerate(similar_patterns):
+                    similarity = pattern.get("similarity", 0.0)
+                    if i == 0 or similarity >= 0.7:
+                        filtered_patterns.append(pattern)
                 # Convert to SwingFlaw objects
                 swing_flaws = [
                     SwingFlaw(
@@ -195,7 +201,7 @@ async def upload_video(
                         drills=pattern.get("drills", []),
                         similarity=pattern.get("similarity", 0.0)
                     )
-                    for pattern in similar_patterns
+                    for pattern in filtered_patterns
                 ]
                 logger.info(f"Identified {len(swing_flaws)} swing flaws for video {video_id}")
         except Exception as e:
@@ -461,6 +467,12 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
             )
             # Find top 3 similar swing patterns
             similar_patterns = find_similar_swing_patterns(swing_vector, limit=3)
+            # Filter: always include top one, and any others with similarity >= 0.7
+            filtered_patterns = []
+            for i, pattern in enumerate(similar_patterns):
+                similarity = pattern.get("similarity", 0.0)
+                if i == 0 or similarity >= 0.7:
+                    filtered_patterns.append(pattern)
             # Convert to SwingFlaw objects
             swing_flaws = [
                 SwingFlaw(
@@ -473,7 +485,7 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
                     drills=pattern.get("drills", []),
                     similarity=pattern.get("similarity", 0.0)
                 )
-                for pattern in similar_patterns
+                for pattern in filtered_patterns
             ]
             logger.info(f"Computed {len(swing_flaws)} swing flaws for video {video_id}")
     except Exception as e:

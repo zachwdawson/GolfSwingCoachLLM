@@ -354,6 +354,9 @@ export default function ResultsPage() {
     
     html = processedLines.join("\n");
     
+    // Process markdown links [text](url) - must be done before bold/italic to avoid conflicts
+    html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #0066cc; text-decoration: underline;">$1</a>');
+    
     // Process bold and italic (bold before italic to handle nested)
     html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     html = html.replace(/\*(.*?)\*/g, "<em>$1</em>");
