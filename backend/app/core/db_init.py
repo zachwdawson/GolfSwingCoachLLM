@@ -23,6 +23,47 @@ def enable_pgvector_extension(engine):
         raise
 
 
+def migrate_videos_table(engine):
+    """Add new columns to videos table if they don't exist (migration)."""
+    try:
+        with engine.begin() as conn:
+            # Check if columns exist and add them if they don't
+            # Check for ball_shape column
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'videos' AND column_name = 'ball_shape'
+            """))
+            if result.fetchone() is None:
+                conn.execute(text("ALTER TABLE videos ADD COLUMN ball_shape VARCHAR"))
+                logger.info("Added ball_shape column to videos table")
+            
+            # Check for contact column
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'videos' AND column_name = 'contact'
+            """))
+            if result.fetchone() is None:
+                conn.execute(text("ALTER TABLE videos ADD COLUMN contact VARCHAR"))
+                logger.info("Added contact column to videos table")
+            
+            # Check for description column
+            result = conn.execute(text("""
+                SELECT column_name 
+                FROM information_schema.columns 
+                WHERE table_name = 'videos' AND column_name = 'description'
+            """))
+            if result.fetchone() is None:
+                conn.execute(text("ALTER TABLE videos ADD COLUMN description TEXT"))
+                logger.info("Added description column to videos table")
+            
+            logger.info("Videos table migration complete")
+    except Exception as e:
+        logger.error(f"Failed to migrate videos table: {e}")
+        raise
+
+
 def create_swing_patterns_table(engine):
     """Create swing_patterns table with pgvector column if it doesn't exist."""
     create_table_sql = """
@@ -149,6 +190,9 @@ def initialize_database():
         
         # Enable pgvector extension
         enable_pgvector_extension(engine)
+        
+        # Migrate videos table (add new columns if needed)
+        migrate_videos_table(engine)
         
         # Create swing_patterns table
         create_swing_patterns_table(engine)

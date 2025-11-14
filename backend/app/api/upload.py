@@ -4,14 +4,16 @@ import json
 import tempfile
 import os
 from io import BytesIO
-from fastapi import APIRouter, File, UploadFile, HTTPException, status, Depends, BackgroundTasks
+from typing import Optional
+from fastapi import APIRouter, File, UploadFile, HTTPException, status, Depends, BackgroundTasks, Form
 from fastapi.responses import FileResponse
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from app.core.config import settings
 from app.models.video import Video, Base
 from app.models.frame import Frame  # Import to ensure table is created
-from app.schemas.video import VideoCreate, VideoResponse, VideoProcessResponse, SwingFlaw
+from app.schemas.video import VideoCreate, VideoResponse, VideoProcessResponse
+from app.schemas.swing_flaw import SwingFlaw
 from app.core.swing_vector import build_swing_vector
 from app.core.swing_matcher import find_similar_swing_patterns
 from app.schemas.frame import FrameResponse, FramesListResponse
@@ -56,12 +58,25 @@ def get_db():
 
 @router.post("/upload", response_model=VideoProcessResponse, status_code=status.HTTP_200_OK)
 async def upload_video(
-    file: UploadFile = File(...), 
+    file: UploadFile = File(...),
+    ball_shape: Optional[str] = Form(None),
+    contact: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     background_tasks: BackgroundTasks = BackgroundTasks()
 ):
     """Upload and process video file synchronously. Returns frames and metrics immediately."""
     logger.info(f"Upload request: {file.filename}")
+    
+    # Map ball_shape values from UI to database format
+    ball_shape_mapping = {
+        "left": "hook",
+        "right": "slice",
+        "straight": "normal"
+    }
+    mapped_ball_shape = None
+    if ball_shape:
+        mapped_ball_shape = ball_shape_mapping.get(ball_shape.lower(), ball_shape.lower())
 
     # Validate MIME type
     if file.content_type not in ALLOWED_MIME_TYPES:
@@ -113,11 +128,18 @@ async def upload_video(
 
         # Save to database (video not yet in S3, will be uploaded after processing)
         try:
-            video = Video(id=video_id, s3_key=s3_key, status="uploaded")
+            video = Video(
+                id=video_id,
+                s3_key=s3_key,
+                status="uploaded",
+                ball_shape=mapped_ball_shape,
+                contact=contact.lower() if contact else None,
+                description=description
+            )
             db.add(video)
             db.commit()
             db.refresh(video)
-            logger.info(f"Video record created: {video_id}, s3_key: {s3_key}")
+            logger.info(f"Video record created: {video_id}, s3_key: {s3_key}, ball_shape: {mapped_ball_shape}, contact: {contact}")
         except Exception as e:
             logger.error(f"Database error: {e}")
             db.rollback()
@@ -152,8 +174,12 @@ async def upload_video(
         swing_flaws = []
         try:
             if metrics:
-                # Build swing vector from metrics
-                swing_vector = build_swing_vector(metrics)
+                # Build swing vector from metrics with user-provided contact and ball_shape
+                swing_vector = build_swing_vector(
+                    metrics,
+                    contact=contact.lower() if contact else "normal",
+                    ball_shape=mapped_ball_shape if mapped_ball_shape else "normal"
+                )
                 # Find top 3 similar swing patterns
                 similar_patterns = find_similar_swing_patterns(swing_vector, limit=3)
                 # Convert to SwingFlaw objects
@@ -226,7 +252,10 @@ async def upload_video(
             status="processed",
             frames=frame_responses,
             metrics=metrics,
-            swing_flaws=swing_flaws
+            swing_flaws=swing_flaws,
+            ball_shape=mapped_ball_shape,
+            contact=contact.lower() if contact else None,
+            description=description
         )
 
     except Exception as e:
@@ -400,8 +429,12 @@ async def get_frames(video_id: uuid.UUID, db: Session = Depends(get_db)):
                     logger.warning(f"Failed to parse swing_metrics for frame {frame.id}")
         
         if metrics_by_position:
-            # Build swing vector from metrics
-            swing_vector = build_swing_vector(metrics_by_position)
+            # Build swing vector from metrics using stored contact and ball_shape values
+            swing_vector = build_swing_vector(
+                metrics_by_position,
+                contact=video.contact.lower() if video.contact else "normal",
+                ball_shape=video.ball_shape if video.ball_shape else "normal"
+            )
             # Find top 3 similar swing patterns
             similar_patterns = find_similar_swing_patterns(swing_vector, limit=3)
             # Convert to SwingFlaw objects

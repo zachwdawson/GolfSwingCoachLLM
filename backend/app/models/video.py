@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime
+from sqlalchemy import Column, String, DateTime, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declarative_base
 
@@ -14,4 +14,7 @@ class Video(Base):
     s3_key = Column(String, nullable=False)
     status = Column(String, nullable=False, default="uploaded")
     created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    ball_shape = Column(String, nullable=True)
+    contact = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
 

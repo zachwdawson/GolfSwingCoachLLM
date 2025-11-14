@@ -1,7 +1,7 @@
 from uuid import UUID
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
-from app.schemas.video import SwingFlaw
+from app.schemas.swing_flaw import SwingFlaw
 
 
 class FrameResponse(BaseModel):
