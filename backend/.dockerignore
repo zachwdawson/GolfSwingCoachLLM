@@ -15,3 +15,45 @@ htmlcov/
 .env
 *.log
 
+# Virtualenvs
+.venv
+venv
+env
+ENV
+app/.venv
+app/venv
+app/env
+app/ENV
+
+# Python cruft
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+
+# Node / build
+node_modules
+dist
+build
+
+# Data / media (if any)
+data/
+datasets/
+*.mp4
+*.mov
+*.avi
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# Logs
+*.log
