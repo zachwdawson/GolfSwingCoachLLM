@@ -23,7 +23,7 @@ jobs:
   deploy:
     name: Build, Push, and Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout code
@@ -56,6 +56,20 @@ jobs:
           echo "frontend_url=$ECR_FRONTEND_URL" >> $GITHUB_OUTPUT
           echo "Backend ECR URL: $ECR_BACKEND_URL"
           echo "Frontend ECR URL: $ECR_FRONTEND_URL"
+          
+      - name: Build and push frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_FRONTEND_REPOSITORY: ${{ env.PROJECT_NAME }}-frontend
+          IMAGE_TAG: latest
+        run: |
+          echo "Building frontend Docker image..."
+          cd frontend
+          docker build -f Dockerfile.prod -t $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG
+          echo "Pushing frontend image to ECR..."
+          docker push $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG
+          echo "✓ Frontend image pushed successfully"
 
       - name: Build and push backend image
         env:
@@ -70,20 +84,6 @@ jobs:
           echo "Pushing backend image to ECR..."
           docker push $ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:$IMAGE_TAG
           echo "✓ Backend image pushed successfully"
-
-      - name: Build and push frontend image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_FRONTEND_REPOSITORY: ${{ env.PROJECT_NAME }}-frontend
-          IMAGE_TAG: latest
-        run: |
-          echo "Building frontend Docker image..."
-          cd frontend
-          docker build -f Dockerfile.prod -t $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG .
-          docker tag $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG
-          echo "Pushing frontend image to ECR..."
-          docker push $ECR_REGISTRY/$ECR_FRONTEND_REPOSITORY:$IMAGE_TAG
-          echo "✓ Frontend image pushed successfully"
 
       - name: Create or update AWS Secrets Manager secrets
         id: create-secrets
@@ -182,16 +182,20 @@ jobs:
           echo "✓ Terraform initialized"
 
       - name: Terraform Apply
+        timeout-minutes: 45
         working-directory: infra
         env:
           TF_VAR_db_username: ${{ secrets.TF_VAR_db_username }}
           TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
           TF_VAR_aws_access_key_id_secret_arn: ${{ steps.create-secrets.outputs.aws_access_key_id_arn }}
           TF_VAR_aws_secret_access_key_secret_arn: ${{ steps.create-secrets.outputs.aws_secret_access_key_arn }}
-          TF_VAR_openai_api_key_secret_arn: ${{ steps.create-secrets.outputs.openai_api_key_arn }}
+          TF_VAR_openai_api_key_secret_arn: ${{ steps.create-secrets.outputs.openai_api_key_secret_arn }}
         run: |
           echo "Applying Terraform configuration..."
-          terraform apply -auto-approve
+          echo "This may take 10-15 minutes (RDS creation is slow)..."
+          echo ""
+          terraform apply -auto-approve -no-color
+          echo ""
           echo "✓ Terraform apply completed"
 
       - name: Get ECS cluster and service names
