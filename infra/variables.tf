@@ -46,3 +46,21 @@ variable "allowed_cidr_blocks" {
   default     = ["10.0.0.0/8"]
 }
 
+variable "aws_access_key_id_secret_arn" {
+  description = "ARN of AWS Access Key ID secret in Secrets Manager (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "aws_secret_access_key_secret_arn" {
+  description = "ARN of AWS Secret Access Key secret in Secrets Manager (optional)"
+  type        = string
+  default     = ""
+}
+
+variable "openai_api_key_secret_arn" {
+  description = "ARN of OpenAI API Key secret in Secrets Manager (optional)"
+  type        = string
+  default     = ""
+}
+

@@ -10,14 +10,13 @@ WORKDIR /app
 # Create frames directory
 RUN mkdir -p /app/frames
 
-# Copy and install dependencies first
+# Copy project files
 COPY pyproject.toml ./
+COPY app ./app
+
+# Install dependencies and package
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
     pip install --no-cache-dir -e .
-# RUN pip install --upgrade pip setuptools wheel && \
-# pip install -e .
-
-COPY app ./app
 
 EXPOSE 8000
 

@@ -17,9 +17,22 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Golf Swing Coach API", version="0.1.0")
 
+# Configure CORS origins - support both localhost and production domains
+cors_origins = ["http://localhost:3000"]
+# Add production origins from environment variable if set
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS", "")
+if allowed_origins_env:
+    cors_origins.extend([origin.strip() for origin in allowed_origins_env.split(",")])
+# Add API base URL as origin if it's different from localhost
+if settings.api_base_url and "localhost" not in settings.api_base_url:
+    # Extract origin from API base URL (e.g., http://alb-dns-name -> http://alb-dns-name)
+    api_origin = settings.api_base_url.rstrip("/")
+    if api_origin not in cors_origins:
+        cors_origins.append(api_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
