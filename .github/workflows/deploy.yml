@@ -23,7 +23,7 @@ jobs:
   deploy:
     name: Build, Push, and Deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 30
 
     steps:
       - name: Checkout code
@@ -84,119 +84,6 @@ jobs:
           echo "Pushing backend image to ECR..."
           docker push $ECR_REGISTRY/$ECR_BACKEND_REPOSITORY:$IMAGE_TAG
           echo "✓ Backend image pushed successfully"
-
-      - name: Create or update AWS Secrets Manager secrets
-        id: create-secrets
-        env:
-          AWS_ACCESS_KEY_ID_VALUE: ${{ secrets.AWS_ACCESS_KEY_ID_VALUE || secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY_VALUE: ${{ secrets.AWS_SECRET_ACCESS_KEY_VALUE || secrets.AWS_SECRET_ACCESS_KEY }}
-          OPENAI_API_KEY_VALUE: ${{ secrets.OPENAI_API_KEY_VALUE }}
-        run: |
-          SECRET_PREFIX="${{ env.PROJECT_NAME }}"
-          
-          # Create or update AWS Access Key ID secret
-          if [ -n "$AWS_ACCESS_KEY_ID_VALUE" ]; then
-            SECRET_NAME="${SECRET_PREFIX}/aws-access-key-id"
-            if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-              echo "Updating existing secret: $SECRET_NAME"
-              aws secretsmanager put-secret-value \
-                --secret-id "$SECRET_NAME" \
-                --secret-string "$AWS_ACCESS_KEY_ID_VALUE" \
-                --region ${{ env.AWS_REGION }} >/dev/null
-            else
-              echo "Creating new secret: $SECRET_NAME"
-              aws secretsmanager create-secret \
-                --name "$SECRET_NAME" \
-                --secret-string "$AWS_ACCESS_KEY_ID_VALUE" \
-                --region ${{ env.AWS_REGION }} >/dev/null
-            fi
-            AWS_ACCESS_KEY_ID_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} --query 'ARN' --output text)
-            echo "aws_access_key_id_arn=$AWS_ACCESS_KEY_ID_ARN" >> $GITHUB_OUTPUT
-            echo "✓ AWS Access Key ID secret ARN: $AWS_ACCESS_KEY_ID_ARN"
-          else
-            echo "⚠ AWS_ACCESS_KEY_ID_VALUE not provided, skipping..."
-          fi
-          
-          # Create or update AWS Secret Access Key secret
-          if [ -n "$AWS_SECRET_ACCESS_KEY_VALUE" ]; then
-            SECRET_NAME="${SECRET_PREFIX}/aws-secret-access-key"
-            if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-              echo "Updating existing secret: $SECRET_NAME"
-              aws secretsmanager put-secret-value \
-                --secret-id "$SECRET_NAME" \
-                --secret-string "$AWS_SECRET_ACCESS_KEY_VALUE" \
-                --region ${{ env.AWS_REGION }} >/dev/null
-            else
-              echo "Creating new secret: $SECRET_NAME"
-              aws secretsmanager create-secret \
-                --name "$SECRET_NAME" \
-                --secret-string "$AWS_SECRET_ACCESS_KEY_VALUE" \
-                --region ${{ env.AWS_REGION }} >/dev/null
-            fi
-            AWS_SECRET_ACCESS_KEY_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} --query 'ARN' --output text)
-            echo "aws_secret_access_key_arn=$AWS_SECRET_ACCESS_KEY_ARN" >> $GITHUB_OUTPUT
-            echo "✓ AWS Secret Access Key secret ARN: $AWS_SECRET_ACCESS_KEY_ARN"
-          else
-            echo "⚠ AWS_SECRET_ACCESS_KEY_VALUE not provided, skipping..."
-          fi
-          
-          # Create or update OpenAI API Key secret
-          if [ -n "$OPENAI_API_KEY_VALUE" ]; then
-            SECRET_NAME="${SECRET_PREFIX}/openai-api-key"
-            if aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
-              echo "Updating existing secret: $SECRET_NAME"
-              aws secretsmanager put-secret-value \
-                --secret-id "$SECRET_NAME" \
-                --secret-string "$OPENAI_API_KEY_VALUE" \
-                --region ${{ env.AWS_REGION }} >/dev/null
-            else
-              echo "Creating new secret: $SECRET_NAME"
-              aws secretsmanager create-secret \
-                --name "$SECRET_NAME" \
-                --secret-string "$OPENAI_API_KEY_VALUE" \
-                --region ${{ env.AWS_REGION }} >/dev/null
-            fi
-            OPENAI_API_KEY_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --region ${{ env.AWS_REGION }} --query 'ARN' --output text)
-            echo "openai_api_key_arn=$OPENAI_API_KEY_ARN" >> $GITHUB_OUTPUT
-            echo "✓ OpenAI API Key secret ARN: $OPENAI_API_KEY_ARN"
-          else
-            echo "⚠ OPENAI_API_KEY_VALUE not provided, skipping..."
-          fi
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.5.0"
-
-      - name: Terraform Init
-        working-directory: infra
-        env:
-          TF_VAR_db_username: ${{ secrets.TF_VAR_db_username }}
-          TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
-          TF_VAR_aws_access_key_id_secret_arn: ${{ steps.create-secrets.outputs.aws_access_key_id_arn }}
-          TF_VAR_aws_secret_access_key_secret_arn: ${{ steps.create-secrets.outputs.aws_secret_access_key_arn }}
-          TF_VAR_openai_api_key_secret_arn: ${{ steps.create-secrets.outputs.openai_api_key_arn }}
-        run: |
-          echo "Initializing Terraform..."
-          terraform init
-          echo "✓ Terraform initialized"
-
-      - name: Terraform Apply
-        timeout-minutes: 45
-        working-directory: infra
-        env:
-          TF_VAR_db_username: ${{ secrets.TF_VAR_db_username }}
-          TF_VAR_db_password: ${{ secrets.TF_VAR_db_password }}
-          TF_VAR_aws_access_key_id_secret_arn: ${{ steps.create-secrets.outputs.aws_access_key_id_arn }}
-          TF_VAR_aws_secret_access_key_secret_arn: ${{ steps.create-secrets.outputs.aws_secret_access_key_arn }}
-          TF_VAR_openai_api_key_secret_arn: ${{ steps.create-secrets.outputs.openai_api_key_secret_arn }}
-        run: |
-          echo "Applying Terraform configuration..."
-          echo "This may take 10-15 minutes (RDS creation is slow)..."
-          echo ""
-          terraform apply -auto-approve -no-color
-          echo ""
-          echo "✓ Terraform apply completed"
 
       - name: Get ECS cluster and service names
         id: get-ecs-info
@@ -262,4 +149,3 @@ jobs:
           echo "- Frontend: \`${{ steps.get-ecs-info.outputs.frontend_service }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Cluster:** \`${{ steps.get-ecs-info.outputs.cluster_name }}\`" >> $GITHUB_STEP_SUMMARY
-
