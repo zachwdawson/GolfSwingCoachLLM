@@ -44,32 +44,55 @@ def mock_s3_client():
 
 def test_upload_video_success(client, mock_s3_client, test_db):
     """Test successful video upload."""
+    from unittest.mock import patch
+    
     video_content = b"fake video content" * 1000  # ~17KB
     video_file = io.BytesIO(video_content)
     video_file.name = "test_video.mp4"
 
-    response = client.post(
-        "/upload",
-        files={"file": ("test_video.mp4", video_file, "video/mp4")},
-    )
+    # Mock extract_frames to avoid ffprobe dependency and actual video processing
+    with patch("app.api.upload.extract_frames") as mock_extract:
+        # Create a side effect that updates the video status in DB to match real behavior
+        def extract_frames_side_effect(video_id, db, temp_file_path=None):
+            # Update video status to "processed" like the real function does (line 338 in frames.py)
+            video = db.query(Video).filter(Video.id == video_id).first()
+            if video:
+                video.status = "processed"
+                db.commit()
+            return {
+                "frames": [],
+                "metrics": {}
+            }
+        
+        mock_extract.side_effect = extract_frames_side_effect
+        
+        response = client.post(
+            "/upload",
+            files={"file": ("test_video.mp4", video_file, "video/mp4")},
+        )
 
-    assert response.status_code == 200
-    data = response.json()
-    assert "video_id" in data
-    assert "s3_key" in data
-    assert data["s3_key"].startswith("videos/")
-    # Video is no longer uploaded to S3 immediately - it's saved to temp file
-    # and will be uploaded after processing completes
-    mock_s3_client.upload_file.assert_not_called()
-    
-    # Verify video record was created in database
-    video_id = uuid.UUID(data["video_id"])
-    db = TestSessionLocal()
-    video = db.query(Video).filter(Video.id == video_id).first()
-    assert video is not None
-    assert video.s3_key == data["s3_key"]
-    assert video.status == "uploaded"
-    db.close()
+        assert response.status_code == 200
+        data = response.json()
+        assert "video_id" in data
+        assert "status" in data
+        # Response always returns "processed" status (hardcoded in VideoProcessResponse)
+        assert data["status"] == "processed"
+        assert "frames" in data
+        assert "metrics" in data
+        # VideoProcessResponse doesn't include s3_key, but video record in DB has it
+        # Video is no longer uploaded to S3 immediately - it's saved to temp file
+        # and will be uploaded after processing completes
+        mock_s3_client.upload_file.assert_not_called()
+        
+        # Verify video record was created in database
+        video_id = uuid.UUID(data["video_id"])
+        db = TestSessionLocal()
+        video = db.query(Video).filter(Video.id == video_id).first()
+        assert video is not None
+        assert video.s3_key.startswith("videos/")  # Check s3_key from DB record
+        # Status should be "processed" after extract_frames completes (even when mocked)
+        assert video.status == "processed"
+        db.close()
 
 
 def test_upload_video_invalid_mime_type(client):

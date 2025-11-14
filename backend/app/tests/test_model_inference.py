@@ -145,6 +145,7 @@ def test_full_pipeline_with_mocked_s3(test_video_path, random_model):
     from app.models.video import Base
     import tempfile
     import shutil
+    import os
     
     # Create test database
     TEST_DB_URL = "sqlite:///./test_model_inference.db"
@@ -209,7 +210,7 @@ def test_full_pipeline_with_mocked_s3(test_video_path, random_model):
                                         return path.endswith(".jpg")
                                     mock_exists.side_effect = exists_side_effect
                                     
-                                    # Mock open for reading frame files
+                                    # Mock open for reading frame files - avoid recursion
                                     import io
                                     with patch("builtins.open", create=True) as mock_open:
                                         def open_side_effect(path, mode="r"):
@@ -219,7 +220,13 @@ def test_full_pipeline_with_mocked_s3(test_video_path, random_model):
                                                     b"\xff\xd8\xff\xe0\x00\x10JFIF"
                                                     + b"\x00" * 1000  # Fake image data
                                                 )
-                                            return open(path, mode) if os.path.exists(path) else MagicMock()
+                                            # For temp video file, return a mock file handle
+                                            if path == temp_video_path:
+                                                mock_file = MagicMock()
+                                                mock_file.read.return_value = b"fake video content"
+                                                return mock_file
+                                            # For other files, return MagicMock
+                                            return MagicMock()
                                         mock_open.side_effect = open_side_effect
                                         
                                         # Mock PIL Image
@@ -231,53 +238,63 @@ def test_full_pipeline_with_mocked_s3(test_video_path, random_model):
                                             
                                             # Mock os.unlink
                                             with patch("app.processing.frames.os.unlink"):
-                                                # Mock extract_single_frame to avoid ffmpeg dependency
-                                                with patch("app.processing.frames.extract_single_frame") as mock_extract:
-                                                    mock_extract.return_value = True
-                                                    
-                                                    # Run extraction
-                                                    db = TestSessionLocal()
-                                                    result = extract_frames(video_id, db)
-                                                
-                                                # Verify it completed
-                                                assert result is True
-                                                
-                                                # Verify video status updated
-                                                video = db.query(Video).filter(Video.id == video_id).first()
-                                                assert video is not None
-                                                assert video.status == "processed"
-                                                
-                                                # Verify frames were created
-                                                frames = db.query(Frame).filter(Frame.video_id == video_id).all()
-                                                assert len(frames) == 8  # Should have 8 event frames
-                                                
-                                                # Verify frame metadata
-                                                for frame in frames:
-                                                    assert frame.event_class is not None
-                                                    assert frame.event_label is not None
-                                                    assert frame.event_class in range(8)
-                                                    assert frame.event_label in EVENT_NAMES.values()
+                                                # Mock os.makedirs for creating frames directory
+                                                with patch("app.processing.frames.os.makedirs"):
+                                                    # Mock extract_single_frame to avoid ffmpeg dependency
+                                                    with patch("app.processing.frames.extract_single_frame") as mock_extract:
+                                                        mock_extract.return_value = True
+                                                        
+                                                        # Mock shutil.copy2 for copying frames
+                                                        with patch("app.processing.frames.shutil.copy2"):
+                                                            # Mock os.path.getsize for file validation
+                                                            with patch("app.processing.frames.os.path.getsize") as mock_getsize:
+                                                                mock_getsize.return_value = 1024  # Return non-zero file size
+                                                                
+                                                                # Run extraction with temp_file_path
+                                                                db = TestSessionLocal()
+                                                                result = extract_frames(video_id, db, temp_file_path=temp_video_path)
+                                                                
+                                                                # Verify it completed
+                                                                assert result is not None
+                                                                assert isinstance(result, dict)
+                                                                assert "frames" in result
+                                                                
+                                                                # Verify video status updated
+                                                                video = db.query(Video).filter(Video.id == video_id).first()
+                                                                assert video is not None
+                                                                assert video.status == "processed"
+                                                                
+                                                                # Verify frames were created
+                                                                frames = db.query(Frame).filter(Frame.video_id == video_id).all()
+                                                                assert len(frames) == 8  # Should have 8 event frames
+                                                                
+                                                                # Verify frame metadata
+                                                                for frame in frames:
+                                                                    assert frame.event_class is not None
+                                                                    assert frame.event_label is not None
+                                                                    assert frame.event_class in range(8)
+                                                                    assert frame.event_label in EVENT_NAMES.values()
 
-                                                # Ensure distinct frames for key events (Address, Top, Impact, Finish)
-                                                key_event_classes = {0, 3, 5, 7}
-                                                key_frames = [
-                                                    f for f in frames if f.event_class in key_event_classes
-                                                ]
-                                                # Use the database 'index' to verify distinct selections
-                                                key_indices = [f.index for f in key_frames]
-                                                assert len(key_frames) == 4
-                                                assert len(set(key_indices)) == 4, (
-                                                    f"Key event frames should be distinct. Got indices: {key_indices}"
-                                                )
+                                                                # Ensure distinct frames for key events (Address, Top, Impact, Finish)
+                                                                key_event_classes = {0, 3, 5, 7}
+                                                                key_frames = [
+                                                                    f for f in frames if f.event_class in key_event_classes
+                                                                ]
+                                                                # Use the database 'index' to verify distinct selections
+                                                                key_indices = [f.index for f in key_frames]
+                                                                assert len(key_frames) == 4
+                                                                assert len(set(key_indices)) == 4, (
+                                                                    f"Key event frames should be distinct. Got indices: {key_indices}"
+                                                                )
  
-                                                print(f"\nSuccessfully extracted {len(frames)} event frames:")
-                                                for frame in frames:
-                                                    print(
-                                                        f"  Frame {frame.index}: {frame.event_label} "
-                                                        f"(class {frame.event_class})"
-                                                    )
-                                                
-                                                db.close()
+                                                                print(f"\nSuccessfully extracted {len(frames)} event frames:")
+                                                                for frame in frames:
+                                                                    print(
+                                                                        f"  Frame {frame.index}: {frame.event_label} "
+                                                                        f"(class {frame.event_class})"
+                                                                    )
+                                                                
+                                                                db.close()
             finally:
                 # Clean up temp file
                 if os.path.exists(temp_video_path):

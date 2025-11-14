@@ -215,55 +215,75 @@ def test_frame_extraction_mocked(client, mock_ffmpeg, mock_pil, test_db):
                                             return path.endswith(".jpg")
                                         mock_exists.side_effect = exists_side_effect
                                         
-                                        # Mock open for reading frame files
+                                        # Mock open for reading frame files - avoid recursion by not calling os.path.exists
                                         with patch("builtins.open", create=True) as mock_open:
                                             def open_side_effect(path, mode="r"):
                                                 if "frame" in path and mode == "rb":
                                                     return io.BytesIO(b"fake image data")
-                                                return open(path, mode) if os.path.exists(path) else MagicMock()
+                                                # For temp video file, return a mock file handle
+                                                if path == temp_video_path:
+                                                    mock_file = MagicMock()
+                                                    mock_file.read.return_value = b"fake video content"
+                                                    return mock_file
+                                                # For other files, return MagicMock
+                                                return MagicMock()
                                             mock_open.side_effect = open_side_effect
                                             
                                             # Mock os.unlink to prevent errors
                                             with patch("app.processing.frames.os.unlink"):
-                                                # Mock pose estimation functions
-                                                with patch("app.processing.frames.estimate_pose") as mock_estimate_pose:
-                                                    import numpy as np
-                                                    # Mock keypoints: [1, 1, 17, 3] format
-                                                    mock_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
-                                                    mock_keypoints[0, 0, :, 2] = 0.5  # Set confidence scores
-                                                    mock_estimate_pose.return_value = mock_keypoints
-                                                    
-                                                    with patch("app.processing.frames.draw_pose_overlay") as mock_draw_pose:
-                                                        # Mock annotated image (same size as input)
-                                                        mock_annotated = np.zeros((1080, 1920, 3), dtype=np.uint8)
-                                                        mock_draw_pose.return_value = mock_annotated
+                                                # Mock os.makedirs for creating frames directory
+                                                with patch("app.processing.frames.os.makedirs"):
+                                                    # Mock extract_single_frame to return True
+                                                    with patch("app.processing.frames.extract_single_frame") as mock_extract:
+                                                        mock_extract.return_value = True
                                                         
-                                                        # Run extraction
-                                                        result = extract_frames(video_id, db)
-                                                        
-                                                        # Verify it completed
-                                                        assert result is True
-                                                        
-                                                        # Verify video status updated
-                                                        db.refresh(video)
-                                                        assert video.status == "processed"
-                                                        
-                                                        # Verify frames were created
-                                                        frames = db.query(Frame).filter(Frame.video_id == video_id).all()
-                                                        assert len(frames) == 8  # Should have 8 event frames
-                                                        
-                                                        # Verify pose estimation was called for each frame
-                                                        assert mock_estimate_pose.call_count == 8
-                                                        assert mock_draw_pose.call_count == 8
-                                                        
-                                                        # Verify pose_keypoints are stored in database
-                                                        for frame in frames:
-                                                            assert frame.pose_keypoints is not None
-                                                            import json
-                                                            keypoints_data = json.loads(frame.pose_keypoints)
-                                                            assert len(keypoints_data) == 1  # [1, 1, 17, 3]
-                                                            assert len(keypoints_data[0]) == 1
-                                                            assert len(keypoints_data[0][0]) == 17  # 17 keypoints
+                                                        # Mock shutil.copy2 for copying frames
+                                                        with patch("app.processing.frames.shutil.copy2"):
+                                                            # Mock os.path.getsize for file validation
+                                                            with patch("app.processing.frames.os.path.getsize") as mock_getsize:
+                                                                mock_getsize.return_value = 1024  # Return non-zero file size
+                                                                
+                                                                # Mock pose estimation functions
+                                                                with patch("app.processing.frames.estimate_pose") as mock_estimate_pose:
+                                                                    import numpy as np
+                                                                    # Mock keypoints: [1, 1, 17, 3] format
+                                                                    mock_keypoints = np.zeros((1, 1, 17, 3), dtype=np.float32)
+                                                                    mock_keypoints[0, 0, :, 2] = 0.5  # Set confidence scores
+                                                                    mock_estimate_pose.return_value = mock_keypoints
+                                                                    
+                                                                    with patch("app.processing.frames.draw_pose_overlay") as mock_draw_pose:
+                                                                        # Mock annotated image (same size as input)
+                                                                        mock_annotated = np.zeros((1080, 1920, 3), dtype=np.uint8)
+                                                                        mock_draw_pose.return_value = mock_annotated
+                                                                        
+                                                                        # Run extraction with temp_file_path
+                                                                        result = extract_frames(video_id, db, temp_file_path=temp_video_path)
+                                                                        
+                                                                        # Verify it completed
+                                                                        assert result is not None
+                                                                        assert isinstance(result, dict)
+                                                                        assert "frames" in result
+                                                                        
+                                                                        # Verify video status updated
+                                                                        db.refresh(video)
+                                                                        assert video.status == "processed"
+                                                                        
+                                                                        # Verify frames were created
+                                                                        frames = db.query(Frame).filter(Frame.video_id == video_id).all()
+                                                                        assert len(frames) == 8  # Should have 8 event frames
+                                                                        
+                                                                        # Verify pose estimation was called for each frame
+                                                                        assert mock_estimate_pose.call_count == 8
+                                                                        assert mock_draw_pose.call_count == 8
+                                                                        
+                                                                        # Verify pose_keypoints are stored in database
+                                                                        for frame in frames:
+                                                                            assert frame.pose_keypoints is not None
+                                                                            import json
+                                                                            keypoints_data = json.loads(frame.pose_keypoints)
+                                                                            assert len(keypoints_data) == 1  # [1, 1, 17, 3]
+                                                                            assert len(keypoints_data[0]) == 1
+                                                                            assert len(keypoints_data[0][0]) == 17  # 17 keypoints
     finally:
         # Clean up temp file
         if os.path.exists(temp_video_path):
@@ -339,35 +359,56 @@ def test_frame_extraction_with_pose_estimation_failure(client, mock_ffmpeg, mock
                                             return path.endswith(".jpg")
                                         mock_exists.side_effect = exists_side_effect
                                         
+                                        # Mock open for reading frame files - avoid recursion
                                         with patch("builtins.open", create=True) as mock_open:
                                             def open_side_effect(path, mode="r"):
                                                 if "frame" in path and mode == "rb":
                                                     return io.BytesIO(b"fake image data")
-                                                return open(path, mode) if os.path.exists(path) else MagicMock()
+                                                # For temp video file, return a mock file handle
+                                                if path == temp_video_path:
+                                                    mock_file = MagicMock()
+                                                    mock_file.read.return_value = b"fake video content"
+                                                    return mock_file
+                                                # For other files, return MagicMock
+                                                return MagicMock()
                                             mock_open.side_effect = open_side_effect
                                             
                                             with patch("app.processing.frames.os.unlink"):
-                                                # Mock pose estimation to raise an exception
-                                                with patch("app.processing.frames.estimate_pose") as mock_estimate_pose:
-                                                    mock_estimate_pose.side_effect = Exception("Pose estimation failed")
-                                                    
-                                                    # Run extraction
-                                                    result = extract_frames(video_id, db)
-                                                    
-                                                    # Verify it completed (should fall back to original frames)
-                                                    assert result is True
-                                                    
-                                                    # Verify video status updated
-                                                    db.refresh(video)
-                                                    assert video.status == "processed"
-                                                    
-                                                    # Verify frames were created
-                                                    frames = db.query(Frame).filter(Frame.video_id == video_id).all()
-                                                    assert len(frames) == 8
-                                                    
-                                                    # Verify pose_keypoints are None when pose estimation fails
-                                                    for frame in frames:
-                                                        assert frame.pose_keypoints is None
+                                                # Mock os.makedirs for creating frames directory
+                                                with patch("app.processing.frames.os.makedirs"):
+                                                    # Mock extract_single_frame to return True
+                                                    with patch("app.processing.frames.extract_single_frame") as mock_extract:
+                                                        mock_extract.return_value = True
+                                                        
+                                                        # Mock shutil.copy2 for copying frames
+                                                        with patch("app.processing.frames.shutil.copy2"):
+                                                            # Mock os.path.getsize for file validation
+                                                            with patch("app.processing.frames.os.path.getsize") as mock_getsize:
+                                                                mock_getsize.return_value = 1024  # Return non-zero file size
+                                                                
+                                                                # Mock pose estimation to raise an exception
+                                                                with patch("app.processing.frames.estimate_pose") as mock_estimate_pose:
+                                                                    mock_estimate_pose.side_effect = Exception("Pose estimation failed")
+                                                                    
+                                                                    # Run extraction with temp_file_path
+                                                                    result = extract_frames(video_id, db, temp_file_path=temp_video_path)
+                                                                    
+                                                                    # Verify it completed (should fall back to original frames)
+                                                                    assert result is not None
+                                                                    assert isinstance(result, dict)
+                                                                    assert "frames" in result
+                                                                    
+                                                                    # Verify video status updated
+                                                                    db.refresh(video)
+                                                                    assert video.status == "processed"
+                                                                    
+                                                                    # Verify frames were created
+                                                                    frames = db.query(Frame).filter(Frame.video_id == video_id).all()
+                                                                    assert len(frames) == 8
+                                                                    
+                                                                    # Verify pose_keypoints are None when pose estimation fails
+                                                                    for frame in frames:
+                                                                        assert frame.pose_keypoints is None
     finally:
         # Clean up temp file
         if os.path.exists(temp_video_path):
