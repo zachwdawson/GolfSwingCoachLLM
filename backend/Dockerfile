@@ -14,18 +14,9 @@ RUN mkdir -p /app/frames
 COPY pyproject.toml ./
 COPY app ./app
 
-# Install dependencies with CPU-only PyTorch and TensorFlow
+# Install dependencies and package
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir \
-    torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
-    pip install --no-cache-dir tensorflow-cpu tensorflow-hub && \
-    pip install --no-cache-dir -e . --no-deps && \
-    pip install --no-cache-dir \
-    fastapi uvicorn[standard] pydantic pydantic-settings \
-    sqlalchemy psycopg2-binary boto3 alembic python-multipart \
-    pillow numpy av opencv-python-headless pandas openai
-
-
+    pip install --no-cache-dir -e .
 
 EXPOSE 8000
 
