@@ -49,3 +49,5 @@ terraform.tfvars
 *.seed
 *.pid.lock
 
+backend/app/ml/latest_model__epoch_20.pth
+*.png

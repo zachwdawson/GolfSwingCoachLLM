@@ -335,29 +335,6 @@ resource "aws_cloudwatch_log_group" "backend" {
   }
 }
 
-cd infra
-terraform output alb_dns_name
-
-# Or via AWS CLI
-aws elbv2 describe-load-balancers \
-  --names golf-coach-alb-dev \
-  --query 'LoadBalancers[0].DNSName' \
-  --output text
-
-  # Check service status
-aws ecs describe-services \
-  --cluster golf-coach-cluster-dev \
-  --services golf-coach-backend-dev golf-coach-frontend-dev \
-  --query 'services[*].[serviceName,runningCount,desiredCount,status]' \
-  --output table
-
-# Check target health (should show healthy targets)
-aws elbv2 describe-target-health \
-  --target-group-arn $(aws elbv2 describe-target-groups \
-    --names golf-coach-backend-tg-dev \
-    --query 'TargetGroups[0].TargetGroupArn' \
-    --output text)
-
 resource "aws_cloudwatch_log_group" "frontend" {
   name              = "/ecs/${var.project_name}-frontend-${var.environment}"
   retention_in_days = 7
@@ -372,8 +349,8 @@ resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.project_name}-backend-${var.environment}"
   network_mode             = "awsvpc"
   requires_compatibilities  = ["FARGATE"]
-  cpu                      = "1024"  # 1 vCPU
-  memory                   = "2048"  # 2 GB
+  cpu                      = "4096"  # 1 vCPU
+  memory                   = "8192"  # 2 GB
   execution_role_arn       = aws_iam_role.ecs_task_execution.arn
   task_role_arn            = aws_iam_role.ecs_task.arn
 
