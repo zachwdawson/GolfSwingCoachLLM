@@ -77,23 +77,15 @@ async def startup_event():
     # Initialize database in background (non-blocking)
     # This allows the app to start even if DB is slow/unreachable
     logger.info("Starting database initialization in background...")
-    loop = asyncio.get_event_loop()
-    
-    def init_db_sync():
-        """Synchronous database initialization wrapper."""
-        try:
-            initialize_database()
-            logger.info("✓ Database initialization completed successfully")
-        except Exception as e:
-            logger.error(f"✗ Database initialization failed: {e}", exc_info=True)
-            logger.error(f"  Exception type: {type(e).__name__}")
-            logger.error(f"  Exception details: {str(e)}")
-            # Don't fail startup - app can still function without swing patterns
-            logger.warning("Continuing despite database initialization failure...")
-    
-    # Run database initialization in executor (non-blocking)
-    loop.run_in_executor(None, init_db_sync)
-    logger.info("Database initialization started in background (non-blocking)")
+    try:
+        initialize_database()
+        logger.info("✓ Database initialization completed successfully")
+    except Exception as e:
+        logger.error(f"✗ Database initialization failed: {e}", exc_info=True)
+        logger.error(f"  Exception type: {type(e).__name__}")
+        logger.error(f"  Exception details: {str(e)}")
+        # Don't fail startup - app can still function without swing patterns
+        logger.warning("Continuing despite database initialization failure...")
     
     # Start background worker for frame processing (skip during tests)
     if not os.environ.get("TESTING"):
