@@ -126,6 +126,28 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+resource "aws_iam_role_policy" "ecs_task_execution_logs" {
+  name = "${var.project_name}-ecs-execution-logs-${var.environment}"
+  role = aws_iam_role.ecs_task_execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = [
+          "${aws_cloudwatch_log_group.backend.arn}:*",
+          "${aws_cloudwatch_log_group.frontend.arn}:*"
+        ]
+      }
+    ]
+  })
+}
+
 # ALB
 resource "aws_lb" "main" {
   name               = "${var.project_name}-alb-${var.environment}"
@@ -303,6 +325,25 @@ resource "aws_iam_role_policy" "ecs_task_s3" {
   })
 }
 
+# CloudWatch Log Groups
+resource "aws_cloudwatch_log_group" "backend" {
+  name              = "/ecs/${var.project_name}-backend-${var.environment}"
+  retention_in_days = 7
+
+  tags = {
+    Name = "${var.project_name}-backend-logs"
+  }
+}
+
+resource "aws_cloudwatch_log_group" "frontend" {
+  name              = "/ecs/${var.project_name}-frontend-${var.environment}"
+  retention_in_days = 7
+
+  tags = {
+    Name = "${var.project_name}-frontend-logs"
+  }
+}
+
 # ECS Task Definitions
 resource "aws_ecs_task_definition" "backend" {
   family                   = "${var.project_name}-backend-${var.environment}"
@@ -363,8 +404,17 @@ resource "aws_ecs_task_definition" "backend" {
         }
       ] : []
 
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.backend.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+        command     = ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/health\")' || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
@@ -404,6 +454,15 @@ resource "aws_ecs_task_definition" "frontend" {
           value = "http://${aws_lb.main.dns_name}"
         }
       ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.frontend.name
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
 
       healthCheck = {
         command     = ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000 || exit 1"]
