@@ -65,14 +65,14 @@ async def startup_event():
         logger.error(f"✗ Failed to create frames directory: {e}", exc_info=True)
         raise
 
-    import resource
-    import psutil
+    # import resource
+    # import psutil
 
-    # Check memory usage
-    process = psutil.Process()
-    mem_info = process.memory_info()
-    logger.info(f"Memory usage before DB init: {mem_info.rss / 1024 / 1024:.2f} MB")
-    logger.info(f"Memory available: {psutil.virtual_memory().available / 1024 / 1024:.2f} MB")
+    # # Check memory usage
+    # process = psutil.Process()
+    # mem_info = process.memory_info()
+    # logger.info(f"Memory usage before DB init: {mem_info.rss / 1024 / 1024:.2f} MB")
+    # logger.info(f"Memory available: {psutil.virtual_memory().available / 1024 / 1024:.2f} MB")
     
     # Initialize database in background (non-blocking)
     # This allows the app to start even if DB is slow/unreachable
