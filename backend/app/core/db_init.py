@@ -185,25 +185,64 @@ def initialize_database():
     Initialize database: enable extensions, create tables, and load initial data.
     This function is idempotent and safe to call multiple times.
     """
+    import sys
+    
+    logger.info("=" * 60)
+    logger.info("Database initialization started")
+    logger.info(f"Connecting to database...")
+    logger.info(f"DB_URL (masked): {settings.db_url.split('@')[-1] if '@' in settings.db_url else 'Not set'}")
+    
     try:
-        engine = create_engine(settings.db_url)
+        logger.info("Creating database engine...")
+        engine = create_engine(
+            settings.db_url,
+            connect_args={"connect_timeout": 10},
+            pool_pre_ping=True,
+            pool_recycle=3600,
+        )
+        logger.info("✓ Database engine created")
+        sys.stdout.flush()
         
         # Enable pgvector extension
+        logger.info("Enabling pgvector extension...")
         enable_pgvector_extension(engine)
+        logger.info("✓ pgvector extension enabled")
+        sys.stdout.flush()
         
         # Migrate videos table (add new columns if needed)
+        logger.info("Migrating videos table...")
         migrate_videos_table(engine)
+        logger.info("✓ Videos table migration completed")
+        sys.stdout.flush()
         
         # Create swing_patterns table
+        logger.info("Creating swing_patterns table...")
         create_swing_patterns_table(engine)
+        logger.info("✓ swing_patterns table created")
+        sys.stdout.flush()
         
         # Initialize swing patterns data
+        logger.info("Initializing swing patterns data...")
         initialize_swing_patterns(engine)
+        logger.info("✓ Swing patterns data initialized")
+        sys.stdout.flush()
         
+        logger.info("Disposing database engine...")
         engine.dispose()
-        logger.info("Database initialization complete")
+        logger.info("=" * 60)
+        logger.info("✓ Database initialization complete")
+        sys.stdout.flush()
+        
     except Exception as e:
-        logger.error(f"Database initialization failed: {e}", exc_info=True)
+        logger.error("=" * 60)
+        logger.error(f"✗ Database initialization failed: {e}", exc_info=True)
+        logger.error(f"  Exception type: {type(e).__name__}")
+        logger.error(f"  Exception message: {str(e)}")
+        import traceback
+        logger.error(f"  Traceback:\n{traceback.format_exc()}")
+        logger.error("=" * 60)
+        sys.stdout.flush()
+        sys.stderr.flush()
         # Don't raise - allow app to start even if initialization fails
         # The app can still function, just without swing patterns
 

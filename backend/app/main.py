@@ -40,26 +40,55 @@ app.add_middleware(
 
 app.include_router(upload_router)
 
-
 @app.on_event("startup")
 async def startup_event():
     """Initialize application on startup."""
+    import sys
+    
+    # Force flush to ensure logs are visible immediately
+    sys.stdout.flush()
+    sys.stderr.flush()
+    
+    logger.info("=" * 60)
+    logger.info("Starting application startup sequence...")
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"Working directory: {os.getcwd()}")
+    logger.info(f"DB_URL configured: {'Yes' if settings.db_url else 'No'}")
+    logger.info(f"DB_URL endpoint: {settings.db_url.split('@')[-1] if '@' in settings.db_url else 'Not set'}")
+    
     # Create frames directory
-    os.makedirs(settings.frames_dir, exist_ok=True)
-    logger.info(f"Frames directory created/verified: {settings.frames_dir}")
+    try:
+        os.makedirs(settings.frames_dir, exist_ok=True)
+        logger.info(f"✓ Frames directory created/verified: {settings.frames_dir}")
+    except Exception as e:
+        logger.error(f"✗ Failed to create frames directory: {e}", exc_info=True)
+        raise
     
     # Initialize database (extensions, tables, swing patterns)
+    logger.info("Starting database initialization...")
     try:
         initialize_database()
+        logger.info("✓ Database initialization completed successfully")
     except Exception as e:
-        logger.error(f"Database initialization failed on startup: {e}", exc_info=True)
+        logger.error(f"✗ Database initialization failed on startup: {e}", exc_info=True)
+        logger.error(f"  Exception type: {type(e).__name__}")
+        logger.error(f"  Exception details: {str(e)}")
         # Don't fail startup - app can still function without swing patterns
+        logger.warning("Continuing startup despite database initialization failure...")
     
     # Start background worker for frame processing (skip during tests)
-    # Note: Queue system is deprecated in favor of synchronous processing
-    # Keeping for backward compatibility with manual processing endpoint
     if not os.environ.get("TESTING"):
-        start_worker()
+        logger.info("Starting background worker...")
+        try:
+            start_worker()
+            logger.info("✓ Background worker started")
+        except Exception as e:
+            logger.error(f"✗ Failed to start background worker: {e}", exc_info=True)
+    
+    logger.info("=" * 60)
+    logger.info("Application startup sequence completed")
+    sys.stdout.flush()
+    sys.stderr.flush()
 
 
 @app.get("/health")
