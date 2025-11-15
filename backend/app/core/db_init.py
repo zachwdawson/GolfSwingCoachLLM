@@ -9,6 +9,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 import psycopg2
+import socket
+from urllib.parse import urlparse
+
 
 logger = logging.getLogger(__name__)
 
@@ -188,8 +191,34 @@ def initialize_database():
     logger.info(f"Raw DB_URL from settings: {dsn!r}")
 
     try:
-        logger.info("Connecting to Postgres with psycopg2...")
-        conn = psycopg2.connect(dsn)
+        parsed = urlparse(dsn)
+        host = parsed.hostname
+        port = parsed.port or 5432
+        dbname = parsed.path.lstrip("/") or "postgres"
+        user = parsed.username
+        password = parsed.password
+
+        # Log DNS resolution from inside ECS
+        try:
+            resolved_ip = socket.gethostbyname(host)
+            logger.info(f"DB host {host} resolved to {resolved_ip}")
+        except Exception as e:
+            logger.error(f"DNS resolution for {host} failed: {e}", exc_info=True)
+
+        logger.info(
+            f"Connecting to Postgres with psycopg2... "
+            f"(host={host}, port={port}, dbname={dbname}, user={user})"
+        )
+
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            dbname=dbname,
+            user=user,
+            password=password,
+            connect_timeout=5,      # <- hard timeout
+            sslmode="require",      # optional, but often expected for RDS
+        )
         logger.info("✓ Connected to Postgres")
 
         cur = conn.cursor()
@@ -197,10 +226,6 @@ def initialize_database():
         cur.execute("SELECT 1;")
         result = cur.fetchone()
         logger.info(f"SELECT 1 result: {result}")
-
-        # If you need pgvector, you can safely do:
-        # logger.info("Ensuring pgvector extension exists...")
-        # cur.execute('CREATE EXTENSION IF NOT EXISTS "vector";')
 
         conn.commit()
         cur.close()
@@ -211,6 +236,7 @@ def initialize_database():
         logger.info("Continuing despite DB init failure (non-fatal).")
     finally:
         logger.info("============================================================")
+
 
 # def initialize_database():
 #     """
