@@ -202,6 +202,13 @@ def initialize_database():
         )
         logger.info("✓ Database engine created")
         sys.stdout.flush()
+            # 1) TEST ONLY: just run a boring query, no pgvector
+        logger.info("DB init: running SELECT 1")
+        with engine.begin() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.info("DB init: SELECT 1 succeeded")
+        sys.stdout.flush()
+
         
         # Enable pgvector extension
         logger.info("Enabling pgvector extension...")
