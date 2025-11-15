@@ -44,11 +44,15 @@ app.include_router(upload_router)
 async def startup_event():
     """Initialize application on startup."""
     import sys
-    import asyncio
     
     # Force flush to ensure logs are visible immediately
     sys.stdout.flush()
     sys.stderr.flush()
+
+    logger.info("Starting database initialization (synchronous)...")
+    initialize_database()
+    logger.info("Database initialization call returned")
+    return
     
     logger.info("=" * 60)
     logger.info("Starting application startup sequence...")

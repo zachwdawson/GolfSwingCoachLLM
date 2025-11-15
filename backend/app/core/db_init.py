@@ -179,77 +179,108 @@ ON CONFLICT (id) DO NOTHING
     
     logger.info(f"Swing patterns initialization complete: {inserted_count} inserted, {skipped_count} skipped")
 
-
 def initialize_database():
-    """
-    Initialize database: enable extensions, create tables, and load initial data.
-    This function is idempotent and safe to call multiple times.
-    """
-    import sys
-    
-    logger.info("=" * 60)
-    logger.info("Database initialization started")
-    logger.info(f"Connecting to database...")
-    logger.info(f"DB_URL (masked): {settings.db_url.split('@')[-1] if '@' in settings.db_url else 'Not set'}")
-    
+    logger.info("============================================================")
+    logger.info("Database initialization started (psycopg2)")
+
+    dsn = settings.db_url
+    logger.info(f"Raw DB_URL from settings: {dsn!r}")
+
     try:
-        logger.info(f"Creating database engine for url... {settings.db_url}")
-        engine = create_engine(
-            settings.db_url,
-            connect_args={"connect_timeout": 10},
-            pool_pre_ping=True,
-            pool_recycle=3600,
-        )
-        logger.info("✓ Database engine created")
-        sys.stdout.flush()
-            # 1) TEST ONLY: just run a boring query, no pgvector
-        logger.info("DB init: running SELECT 1")
-        with engine.begin() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.info("DB init: SELECT 1 succeeded")
-        sys.stdout.flush()
+        logger.info("Connecting to Postgres with psycopg2...")
+        conn = psycopg2.connect(dsn)
+        logger.info("✓ Connected to Postgres")
+
+        cur = conn.cursor()
+        logger.info("Running SELECT 1...")
+        cur.execute("SELECT 1;")
+        result = cur.fetchone()
+        logger.info(f"SELECT 1 result: {result}")
+
+        # If you need pgvector, you can safely do:
+        # logger.info("Ensuring pgvector extension exists...")
+        # cur.execute('CREATE EXTENSION IF NOT EXISTS "vector";')
+
+        conn.commit()
+        cur.close()
+        conn.close()
+        logger.info("✓ Database initialization finished successfully")
+    except Exception as e:
+        logger.error(f"✗ Database initialization failed: {e}", exc_info=True)
+        logger.info("Continuing despite DB init failure (non-fatal).")
+    finally:
+        logger.info("============================================================")
+
+# def initialize_database():
+#     """
+#     Initialize database: enable extensions, create tables, and load initial data.
+#     This function is idempotent and safe to call multiple times.
+#     """
+#     import sys
+    
+#     logger.info("=" * 60)
+#     logger.info("Database initialization started")
+#     logger.info(f"Connecting to database...")
+#     logger.info(f"DB_URL (masked): {settings.db_url.split('@')[-1] if '@' in settings.db_url else 'Not set'}")
+    
+#     try:
+#         logger.info(f"Creating database engine for url... {settings.db_url}")
+#         engine = create_engine(
+#             settings.db_url,
+#             connect_args={"connect_timeout": 10},
+#             pool_pre_ping=True,
+#             pool_recycle=3600,
+#         )
+#         logger.info("✓ Database engine created")
+#         sys.stdout.flush()
+#             # 1) TEST ONLY: just run a boring query, no pgvector
+#         logger.info("DB init: running SELECT 1")
+#         with engine.begin() as conn:
+#             conn.execute(text("SELECT 1"))
+#         logger.info("DB init: SELECT 1 succeeded")
+#         sys.stdout.flush()
 
         
-        # Enable pgvector extension
-        logger.info("Enabling pgvector extension...")
-        enable_pgvector_extension(engine)
-        logger.info("✓ pgvector extension enabled")
-        sys.stdout.flush()
+#         # Enable pgvector extension
+#         logger.info("Enabling pgvector extension...")
+#         enable_pgvector_extension(engine)
+#         logger.info("✓ pgvector extension enabled")
+#         sys.stdout.flush()
         
-        # Migrate videos table (add new columns if needed)
-        logger.info("Migrating videos table...")
-        migrate_videos_table(engine)
-        logger.info("✓ Videos table migration completed")
-        sys.stdout.flush()
+#         # Migrate videos table (add new columns if needed)
+#         logger.info("Migrating videos table...")
+#         migrate_videos_table(engine)
+#         logger.info("✓ Videos table migration completed")
+#         sys.stdout.flush()
         
-        # Create swing_patterns table
-        logger.info("Creating swing_patterns table...")
-        create_swing_patterns_table(engine)
-        logger.info("✓ swing_patterns table created")
-        sys.stdout.flush()
+#         # Create swing_patterns table
+#         logger.info("Creating swing_patterns table...")
+#         create_swing_patterns_table(engine)
+#         logger.info("✓ swing_patterns table created")
+#         sys.stdout.flush()
         
-        # Initialize swing patterns data
-        logger.info("Initializing swing patterns data...")
-        initialize_swing_patterns(engine)
-        logger.info("✓ Swing patterns data initialized")
-        sys.stdout.flush()
+#         # Initialize swing patterns data
+#         logger.info("Initializing swing patterns data...")
+#         initialize_swing_patterns(engine)
+#         logger.info("✓ Swing patterns data initialized")
+#         sys.stdout.flush()
         
-        logger.info("Disposing database engine...")
-        engine.dispose()
-        logger.info("=" * 60)
-        logger.info("✓ Database initialization complete")
-        sys.stdout.flush()
+#         logger.info("Disposing database engine...")
+#         engine.dispose()
+#         logger.info("=" * 60)
+#         logger.info("✓ Database initialization complete")
+#         sys.stdout.flush()
         
-    except Exception as e:
-        logger.error("=" * 60)
-        logger.error(f"✗ Database initialization failed: {e}", exc_info=True)
-        logger.error(f"  Exception type: {type(e).__name__}")
-        logger.error(f"  Exception message: {str(e)}")
-        import traceback
-        logger.error(f"  Traceback:\n{traceback.format_exc()}")
-        logger.error("=" * 60)
-        sys.stdout.flush()
-        sys.stderr.flush()
-        # Don't raise - allow app to start even if initialization fails
-        # The app can still function, just without swing patterns
+#     except Exception as e:
+#         logger.error("=" * 60)
+#         logger.error(f"✗ Database initialization failed: {e}", exc_info=True)
+#         logger.error(f"  Exception type: {type(e).__name__}")
+#         logger.error(f"  Exception message: {str(e)}")
+#         import traceback
+#         logger.error(f"  Traceback:\n{traceback.format_exc()}")
+#         logger.error("=" * 60)
+#         sys.stdout.flush()
+#         sys.stderr.flush()
+#         # Don't raise - allow app to start even if initialization fails
+#         # The app can still function, just without swing patterns
 
