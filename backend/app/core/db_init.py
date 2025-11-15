@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
+import psycopg2
 
 logger = logging.getLogger(__name__)
 
