@@ -194,12 +194,21 @@ def initialize_database():
     
     try:
         logger.info(f"Creating database engine for url... {settings.db_url}")
-        engine = create_engine(
-            settings.db_url,
-            connect_args={"connect_timeout": 10},
-            pool_pre_ping=True,
-            pool_recycle=3600,
-        )
+        db_url = settings.db_url
+
+        # switch driver to psycopg3 if needed
+        if db_url.startswith("postgresql://"):
+            db_url = "postgresql+psycopg://" + db_url[len("postgresql://"):]
+        elif db_url.startswith("postgres://"):
+            db_url = "postgresql+psycopg://" + db_url[len("postgres://"):]
+
+        engine = create_engine(db_url, pool_pre_ping=True, future=True)
+        # engine = create_engine(
+        #     settings.db_url,
+        #     connect_args={"connect_timeout": 10},
+        #     pool_pre_ping=True,
+        #     pool_recycle=3600,
+        # )
         logger.info("✓ Database engine created")
         sys.stdout.flush()
             # 1) TEST ONLY: just run a boring query, no pgvector
