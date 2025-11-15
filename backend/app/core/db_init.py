@@ -193,7 +193,7 @@ def initialize_database():
     logger.info(f"DB_URL (masked): {settings.db_url.split('@')[-1] if '@' in settings.db_url else 'Not set'}")
     
     try:
-        logger.info("Creating database engine...")
+        logger.info(f"Creating database engine for url... {settings.db_url}")
         engine = create_engine(
             settings.db_url,
             connect_args={"connect_timeout": 10},
