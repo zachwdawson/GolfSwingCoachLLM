@@ -1,8 +1,11 @@
 FROM python:3.11-slim
 
-# Install ffmpeg
+# Install system libraries for ffmpeg and Postgres client
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    build-essential \
+    libpq-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
